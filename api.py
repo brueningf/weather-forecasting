@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -10,8 +10,6 @@ from data_processor import DataProcessor
 from model_predictor import ModelPredictor
 from config import Config
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
@@ -49,6 +47,9 @@ class DataExportResponse(BaseModel):
     records_exported: int
     timestamp: datetime
 
+class InitialExportRequest(BaseModel):
+    hours_back: int = 168  # Default to 1 week
+
 @app.get("/")
 async def root():
     """Root endpoint with API information"""
@@ -60,7 +61,10 @@ async def root():
             "predictions": "/predictions",
             "forecast": "/forecast",
             "export_data": "/export-data",
-            "latest_data": "/latest-data"
+            "force_initial_export": "/force-initial-export",
+            "reset_export_time": "/reset-export-time",
+            "latest_data": "/latest-data",
+            "stats": "/stats"
         }
     }
 
@@ -155,6 +159,38 @@ async def export_data():
         logger.error(f"Error exporting data: {e}")
         raise HTTPException(status_code=500, detail="Error exporting data")
 
+@app.post("/force-initial-export", response_model=DataExportResponse)
+async def force_initial_export(request: InitialExportRequest):
+    """Force an initial data export for model training"""
+    try:
+        df = data_processor.force_initial_export(hours_back=request.hours_back)
+        
+        return DataExportResponse(
+            message=f"Forced initial export from last {request.hours_back} hours",
+            records_exported=len(df),
+            timestamp=datetime.now()
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in forced initial export: {e}")
+        raise HTTPException(status_code=500, detail="Error in forced initial export")
+
+@app.post("/reset-export-time", response_model=dict)
+async def reset_export_time():
+    """Reset the last export time to force a full data export on next call"""
+    try:
+        data_processor.reset_export_time()
+        
+        return {
+            "message": "Export time reset successfully",
+            "timestamp": datetime.now(),
+            "next_export": "will include all available data"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error resetting export time: {e}")
+        raise HTTPException(status_code=500, detail="Error resetting export time")
+
 @app.get("/latest-data")
 async def get_latest_data(hours: int = 24):
     """Get latest sensor data from source database"""
@@ -197,43 +233,4 @@ async def get_stats():
         
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
-        raise HTTPException(status_code=500, detail="Error retrieving statistics")
-
-# Background task for continuous processing
-async def continuous_processing():
-    """Background task for continuous data processing and prediction"""
-    while True:
-        try:
-            logger.info("Starting continuous processing cycle")
-            
-            # Export new data
-            df = data_processor.export_data()
-            
-            if not df.empty:
-                # Preprocess data
-                processed_df = data_processor.preprocess_data(df)
-                
-                if not processed_df.empty:
-                    # Generate predictions
-                    predictions_df = model_predictor.predict_future(processed_df, hours_ahead=24)
-                    
-                    if not predictions_df.empty:
-                        # Save predictions
-                        data_processor.save_predictions(predictions_df)
-                        logger.info("Continuous processing cycle completed successfully")
-                    else:
-                        logger.warning("No predictions generated in continuous processing")
-                else:
-                    logger.warning("No processed data available for prediction")
-            else:
-                logger.info("No new data to process")
-            
-            # Wait for next cycle
-            await asyncio.sleep(config.PREDICTION_INTERVAL_MINUTES * 60)
-            
-        except Exception as e:
-            logger.error(f"Error in continuous processing: {e}")
-            await asyncio.sleep(60)  # Wait 1 minute before retrying
-
-# Import asyncio for background tasks
-import asyncio 
+        raise HTTPException(status_code=500, detail="Error retrieving statistics") 

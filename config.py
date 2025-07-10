@@ -19,13 +19,6 @@ class Config:
     API_DB_NAME = os.getenv('API_DB_NAME', 'api_db')
     API_DB_PORT = int(os.getenv('API_DB_PORT', 3306))
     
-    # Legacy support - use API database settings if source settings not provided
-    DB_HOST = os.getenv('DB_HOST', API_DB_HOST)
-    DB_USER = os.getenv('DB_USER', API_DB_USER)
-    DB_PASSWORD = os.getenv('DB_PASSWORD', API_DB_PASSWORD)
-    DB_NAME = os.getenv('DB_NAME', API_DB_NAME)
-    DB_PORT = int(os.getenv('DB_PORT', API_DB_PORT))
-    
     # API Configuration
     API_HOST = os.getenv('API_HOST', '0.0.0.0')
     API_PORT = int(os.getenv('API_PORT', 8000))

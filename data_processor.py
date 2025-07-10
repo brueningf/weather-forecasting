@@ -4,14 +4,23 @@ import numpy as np
 from datetime import datetime, timedelta
 from config import Config
 import logging
+from sqlalchemy import create_engine, text
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class DataProcessor:
     def __init__(self):
         self.config = Config()
         self.last_export_time = None
+        self.sensor_data_table = "timeseries"
+        
+        # Create SQLAlchemy engines
+        self.source_engine = create_engine(
+            f"mysql+mysqlconnector://{self.config.SOURCE_DB_USER}:{self.config.SOURCE_DB_PASSWORD}@{self.config.SOURCE_DB_HOST}:{self.config.SOURCE_DB_PORT}/{self.config.SOURCE_DB_NAME}"
+        )
+        self.api_engine = create_engine(
+            f"mysql+mysqlconnector://{self.config.API_DB_USER}:{self.config.API_DB_PASSWORD}@{self.config.API_DB_HOST}:{self.config.API_DB_PORT}/{self.config.API_DB_NAME}"
+        )
     
     def get_source_connection(self):
         """Create connection to source database (where sensor data comes from)"""
@@ -33,37 +42,30 @@ class DataProcessor:
             port=self.config.API_DB_PORT
         )
     
-    def get_connection(self):
-        """Legacy method - returns API database connection for backward compatibility"""
-        return self.get_api_connection()
-    
     def export_data(self):
         """Export new data from source database since last export"""
         try:
-            conn = self.get_source_connection()
-            
             # Get last export time or use a default
             if self.last_export_time is None:
                 # Get the latest timestamp from the source database
-                cursor = conn.cursor()
-                cursor.execute("SELECT MAX(timestamp) FROM sensor_data")
-                result = cursor.fetchone()
-                if result[0]:
-                    self.last_export_time = result[0]
-                else:
-                    # If no data exists, use 24 hours ago
-                    self.last_export_time = datetime.now() - timedelta(hours=24)
-                cursor.close()
+                with self.source_engine.connect() as conn:
+                    result = conn.execute(text(f"SELECT MAX(timestamp) FROM {self.sensor_data_table}"))
+                    row = result.fetchone()
+                    if row[0]:
+                        self.last_export_time = row[0]
+                    else:
+                        # If no data exists, use 24 hours ago
+                        self.last_export_time = datetime.now() - timedelta(hours=24)
             
             # Query for new data from source database
-            query = """
+            query = f"""
                 SELECT timestamp, temperature 
-                FROM sensor_data 
+                FROM {self.sensor_data_table} 
                 WHERE timestamp > %s 
                 ORDER BY timestamp
             """
             
-            df = pd.read_sql(query, conn, params=[self.last_export_time])
+            df = pd.read_sql(query, self.source_engine, params=(self.last_export_time,))
             
             if not df.empty:
                 # Update last export time to the latest timestamp
@@ -72,7 +74,6 @@ class DataProcessor:
             else:
                 logger.info("No new data to export from source database")
             
-            conn.close()
             return df
             
         except Exception as e:
@@ -153,8 +154,6 @@ class DataProcessor:
     def get_latest_predictions(self, hours=24):
         """Get latest predictions from API database"""
         try:
-            conn = self.get_api_connection()
-            
             query = """
                 SELECT timestamp, predicted_temperature, confidence
                 FROM predictions
@@ -163,9 +162,8 @@ class DataProcessor:
             """
             
             cutoff_time = datetime.now() - timedelta(hours=hours)
-            df = pd.read_sql(query, conn, params=[cutoff_time])
+            df = pd.read_sql(query, self.api_engine, params=(cutoff_time,))
             
-            conn.close()
             return df
             
         except Exception as e:
@@ -175,20 +173,17 @@ class DataProcessor:
     def get_latest_sensor_data(self, hours=24):
         """Get latest sensor data from source database"""
         try:
-            conn = self.get_source_connection()
-            
-            query = """
+            query = f"""
                 SELECT timestamp, temperature
-                FROM sensor_data
+                FROM {self.sensor_data_table}
                 WHERE timestamp >= %s
                 ORDER BY timestamp DESC
                 LIMIT 1000
             """
             
             cutoff_time = datetime.now() - timedelta(hours=hours)
-            df = pd.read_sql(query, conn, params=[cutoff_time])
+            df = pd.read_sql(query, self.source_engine, params=(cutoff_time,))
             
-            conn.close()
             return df
             
         except Exception as e:
@@ -228,11 +223,11 @@ class DataProcessor:
             cursor = conn.cursor()
             
             # Count sensor data records
-            cursor.execute("SELECT COUNT(*) FROM sensor_data")
+            cursor.execute(f"SELECT COUNT(*) FROM {self.sensor_data_table}")
             sensor_count = cursor.fetchone()[0]
             
             # Get latest sensor data timestamp
-            cursor.execute("SELECT MAX(timestamp) FROM sensor_data")
+            cursor.execute(f"SELECT MAX(timestamp) FROM {self.sensor_data_table}")
             latest_sensor = cursor.fetchone()[0]
             
             cursor.close()
@@ -246,3 +241,37 @@ class DataProcessor:
         except Exception as e:
             logger.error(f"Error getting source database stats: {e}")
             return {"sensor_records": 0, "latest_sensor_data": None} 
+    
+    def reset_export_time(self):
+        """Reset the last export time to force a full data export"""
+        self.last_export_time = None
+        logger.info("Reset last export time - next export will include all available data")
+    
+    def force_initial_export(self, hours_back=168):  # 168 hours = 1 week
+        """Force an initial data export for model training with specified lookback period"""
+        try:
+            # Calculate the cutoff time
+            cutoff_time = datetime.now() - timedelta(hours=hours_back)
+            
+            # Query for data from the cutoff time
+            query = f"""
+                SELECT timestamp, temperature 
+                FROM {self.sensor_data_table} 
+                WHERE timestamp > %s 
+                ORDER BY timestamp
+            """
+            
+            df = pd.read_sql(query, self.source_engine, params=(cutoff_time,))
+            
+            if not df.empty:
+                # Set the last export time to the latest timestamp
+                self.last_export_time = df['timestamp'].max()
+                logger.info(f"Forced initial export: {len(df)} records from last {hours_back} hours")
+            else:
+                logger.warning(f"No data found in the last {hours_back} hours")
+            
+            return df
+            
+        except Exception as e:
+            logger.error(f"Error in forced initial export: {e}")
+            return pd.DataFrame() 

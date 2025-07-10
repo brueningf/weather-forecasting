@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import pandas as pd
 import numpy as np
+import os
 from datetime import datetime, timedelta
 from config import Config
 import logging
@@ -161,7 +162,4 @@ class ModelPredictor:
             
         except Exception as e:
             logger.error(f"Error predicting future: {e}")
-            return pd.DataFrame()
-
-# Import os at the top level
-import os 
+            return pd.DataFrame() 
