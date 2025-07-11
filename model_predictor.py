@@ -6,6 +6,8 @@ import os
 from datetime import datetime, timedelta
 from config import Config
 import logging
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 
@@ -31,18 +33,28 @@ class ModelPredictor:
     def __init__(self):
         self.config = Config()
         self.model = None
+        self.scaler = StandardScaler()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.is_trained = False
         self.load_model()
     
     def load_model(self):
         """Load the trained model"""
         try:
             if self.config.MODEL_PATH and os.path.exists(self.config.MODEL_PATH):
-                self.model = torch.load(self.config.MODEL_PATH, map_location=self.device)
+                # Add SimpleWeatherModel to safe globals for PyTorch 2.6+ compatibility
+                torch.serialization.add_safe_globals([SimpleWeatherModel])
+                
+                # Load model and scaler
+                checkpoint = torch.load(self.config.MODEL_PATH, map_location=self.device)
+                self.model = checkpoint['model']
+                self.scaler = checkpoint['scaler']
+                self.is_trained = checkpoint.get('is_trained', True)
                 logger.info(f"Model loaded from {self.config.MODEL_PATH}")
             else:
                 # Create a default model if no trained model exists
                 self.model = SimpleWeatherModel()
+                self.is_trained = False
                 logger.info("Created default model (no trained model found)")
             
             self.model.eval()
@@ -51,7 +63,133 @@ class ModelPredictor:
             logger.error(f"Error loading model: {e}")
             # Create a default model as fallback
             self.model = SimpleWeatherModel()
+            self.is_trained = False
             self.model.eval()
+    
+    def save_model(self):
+        """Save the trained model"""
+        try:
+            if self.model is not None:
+                checkpoint = {
+                    'model': self.model,
+                    'scaler': self.scaler,
+                    'is_trained': self.is_trained,
+                    'timestamp': datetime.now()
+                }
+                torch.save(checkpoint, self.config.MODEL_PATH)
+                logger.info(f"Model saved to {self.config.MODEL_PATH}")
+        except Exception as e:
+            logger.error(f"Error saving model: {e}")
+    
+    def prepare_training_data(self, df):
+        """Prepare training data from dataframe"""
+        if df.empty or len(df) < 10:
+            logger.warning("Insufficient data for training")
+            return None, None
+        
+        try:
+            # Select features for training
+            features = ['temperature', 'hour', 'day_of_week', 'month']
+            available_features = [f for f in features if f in df.columns]
+            
+            if len(available_features) < 2:
+                logger.warning("Insufficient features for training")
+                return None, None
+            
+            # Create feature matrix
+            X = df[available_features].values
+            
+            # Handle missing values
+            X = np.nan_to_num(X, nan=0.0)
+            
+            # Create target (next hour's temperature)
+            y = df['temperature'].values[1:]  # Shift by 1 hour
+            X = X[:-1]  # Remove last row since we don't have next temperature
+            
+            if len(X) < 10:
+                logger.warning("Insufficient data after creating targets")
+                return None, None
+            
+            # Scale features
+            X_scaled = self.scaler.fit_transform(X)
+            
+            return X_scaled, y
+            
+        except Exception as e:
+            logger.error(f"Error preparing training data: {e}")
+            return None, None
+    
+    def train_model(self, df, epochs=100, batch_size=32, learning_rate=0.001):
+        """Train the model on the provided data"""
+        try:
+            # Prepare training data
+            X, y = self.prepare_training_data(df)
+            if X is None or y is None:
+                logger.error("Could not prepare training data")
+                return False
+            
+            # Split data
+            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+            
+            # Convert to tensors
+            X_train_tensor = torch.FloatTensor(X_train).to(self.device)
+            y_train_tensor = torch.FloatTensor(y_train).to(self.device)
+            X_val_tensor = torch.FloatTensor(X_val).to(self.device)
+            y_val_tensor = torch.FloatTensor(y_val).to(self.device)
+            
+            # Initialize model
+            input_size = X_train.shape[1]
+            self.model = SimpleWeatherModel(input_size=input_size).to(self.device)
+            
+            # Setup training
+            criterion = nn.MSELoss()
+            optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
+            
+            # Training loop
+            best_val_loss = float('inf')
+            patience = 10
+            patience_counter = 0
+            
+            logger.info(f"Starting training with {len(X_train)} samples, {epochs} epochs")
+            
+            for epoch in range(epochs):
+                # Training
+                self.model.train()
+                optimizer.zero_grad()
+                outputs = self.model(X_train_tensor)
+                loss = criterion(outputs.squeeze(), y_train_tensor)
+                loss.backward()
+                optimizer.step()
+                
+                # Validation
+                self.model.eval()
+                with torch.no_grad():
+                    val_outputs = self.model(X_val_tensor)
+                    val_loss = criterion(val_outputs.squeeze(), y_val_tensor)
+                
+                # Early stopping
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                
+                if patience_counter >= patience:
+                    logger.info(f"Early stopping at epoch {epoch}")
+                    break
+                
+                if epoch % 20 == 0:
+                    logger.info(f"Epoch {epoch}: Train Loss: {loss.item():.4f}, Val Loss: {val_loss.item():.4f}")
+            
+            self.is_trained = True
+            self.save_model()
+            
+            logger.info(f"Training completed. Final validation loss: {best_val_loss:.4f}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error training model: {e}")
+            return False
     
     def prepare_input_tensor(self, df):
         """Prepare input tensor from dataframe"""
@@ -73,8 +211,14 @@ class ModelPredictor:
             # Handle missing values
             X = np.nan_to_num(X, nan=0.0)
             
+            # Scale features using the fitted scaler
+            if self.is_trained and hasattr(self.scaler, 'mean_'):
+                X_scaled = self.scaler.transform(X)
+            else:
+                X_scaled = X
+            
             # Convert to tensor
-            X_tensor = torch.FloatTensor(X).to(self.device)
+            X_tensor = torch.FloatTensor(X_scaled).to(self.device)
             
             return X_tensor
             
@@ -82,10 +226,18 @@ class ModelPredictor:
             logger.error(f"Error preparing input tensor: {e}")
             return None
     
+    def needs_training(self):
+        """Check if the model needs to be trained"""
+        return not self.is_trained or self.model is None
+    
     def predict(self, df, forecast_hours=24):
         """Make predictions on the data"""
         if df.empty:
             logger.warning("Empty dataframe provided for prediction")
+            return pd.DataFrame()
+        
+        if self.needs_training():
+            logger.warning("Model is not trained. Cannot make predictions.")
             return pd.DataFrame()
         
         try:
@@ -135,6 +287,10 @@ class ModelPredictor:
         try:
             if current_data.empty:
                 logger.warning("No current data provided for future prediction")
+                return pd.DataFrame()
+            
+            if self.needs_training():
+                logger.warning("Model is not trained. Cannot make predictions.")
                 return pd.DataFrame()
             
             # Generate future timestamps

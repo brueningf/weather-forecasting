@@ -64,7 +64,8 @@ async def root():
             "force_initial_export": "/force-initial-export",
             "reset_export_time": "/reset-export-time",
             "latest_data": "/latest-data",
-            "stats": "/stats"
+            "stats": "/stats",
+            "train_model": "/train-model"
         }
     }
 
@@ -74,7 +75,10 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now(),
-        "model_loaded": model_predictor.model is not None
+        "model_status": {
+            "is_trained": model_predictor.is_trained,
+            "model_loaded": model_predictor.model is not None
+        }
     }
 
 @app.get("/predictions", response_model=List[PredictionResponse])
@@ -218,19 +222,61 @@ async def get_latest_data(hours: int = 24):
 
 @app.get("/stats")
 async def get_stats():
-    """Get system statistics from both databases"""
+    """Get statistics from both databases"""
     try:
-        # Get stats from both databases
         source_stats = data_processor.get_source_database_stats()
         api_stats = data_processor.get_api_database_stats()
         
         return {
             "source_database": source_stats,
             "api_database": api_stats,
-            "model_loaded": model_predictor.model is not None,
-            "last_export_time": data_processor.last_export_time.isoformat() if data_processor.last_export_time else None
+            "model_status": {
+                "is_trained": model_predictor.is_trained,
+                "model_path": config.MODEL_PATH
+            },
+            "timestamp": datetime.now()
         }
         
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
-        raise HTTPException(status_code=500, detail="Error retrieving statistics") 
+        raise HTTPException(status_code=500, detail="Error retrieving statistics")
+
+@app.post("/train-model")
+async def train_model():
+    """Train the model on all available historical data"""
+    try:
+        logger.info("Manual model training requested")
+        
+        # Export all available data for training
+        df = data_processor.force_initial_export(hours_back=8760)  # 1 year of data
+        
+        if df.empty:
+            raise HTTPException(status_code=404, detail="No historical data available for training")
+        
+        logger.info(f"Exported {len(df)} records for training")
+        
+        # Preprocess the data
+        processed_df = data_processor.preprocess_data(df)
+        
+        if processed_df.empty:
+            raise HTTPException(status_code=500, detail="Error preprocessing data for training")
+        
+        logger.info(f"Preprocessed data shape: {processed_df.shape}")
+        
+        # Train the model
+        success = model_predictor.train_model(processed_df, epochs=50, learning_rate=0.001)
+        
+        if success:
+            return {
+                "message": "Model training completed successfully",
+                "records_used": len(df),
+                "timestamp": datetime.now()
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Model training failed")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error training model: {e}")
+        raise HTTPException(status_code=500, detail="Error training model") 

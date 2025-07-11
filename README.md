@@ -4,12 +4,14 @@ A continuous weather forecasting system that processes sensor data and provides 
 
 ## Features
 
+- **Automatic Model Training**: Trains the ML model on all available historical data on first startup
 - **Continuous Data Processing**: Automatically exports and processes new sensor data at configurable intervals
-- **Machine Learning Predictions**: Uses PyTorch models for weather forecasting
+- **Machine Learning Predictions**: Uses PyTorch neural networks for weather forecasting
 - **REST API**: FastAPI-based API for accessing predictions and data
 - **Database Integration**: MySQL database for storing sensor data and predictions
 - **Scheduled Processing**: APScheduler for background task management
 - **Real-time Statistics**: API endpoints for system monitoring
+- **Manual Model Retraining**: API endpoint to retrain the model with latest data
 
 ## Project Structure
 
@@ -107,7 +109,7 @@ EXPORT_BATCH_SIZE=1000
 
 ### 4. Model Setup
 
-Place your trained PyTorch model as `model.pth` in the project root. If no model is provided, a default model will be created.
+The application will automatically train a model on first startup using all available historical data. No pre-trained model is required.
 
 ## Running the Application
 
@@ -118,6 +120,16 @@ python main.py
 ```
 
 The API will be available at `http://localhost:8000`
+
+**First Run Behavior:**
+- The application will automatically export all available historical data (up to 1 year)
+- Train a neural network model on this data
+- Save the trained model to `model.pth`
+- Start the prediction scheduler
+
+**Subsequent Runs:**
+- The application will load the previously trained model
+- Continue with normal prediction operations
 
 ### API Documentation
 
@@ -130,23 +142,29 @@ Once running, you can access:
 ### Core Endpoints
 
 - `GET /` - API information and available endpoints
-- `GET /health` - Health check
+- `GET /health` - Health check with model training status
 - `GET /stats` - System statistics
 
 ### Data Endpoints
 
 - `GET /latest-data?hours=24` - Get latest sensor data
 - `POST /export-data` - Manually trigger data export
+- `POST /force-initial-export` - Force export of historical data
+- `POST /reset-export-time` - Reset export time to force full data export
 
 ### Prediction Endpoints
 
 - `GET /predictions?hours=24` - Get latest predictions from database
 - `POST /forecast` - Generate new weather forecast
 
+### Model Training Endpoints
+
+- `POST /train-model` - Manually retrain the model on all available data
+
 ### Example API Usage
 
 ```bash
-# Get system health
+# Get system health and model status
 curl http://localhost:8000/health
 
 # Get latest predictions
@@ -157,9 +175,46 @@ curl -X POST http://localhost:8000/forecast \
   -H "Content-Type: application/json" \
   -d '{"hours_ahead": 24}'
 
+# Retrain the model
+curl -X POST http://localhost:8000/train-model
+
 # Get system statistics
 curl http://localhost:8000/stats
 ```
+
+## Model Training
+
+### Automatic Training
+
+The model is automatically trained on first startup using:
+- All available historical data (up to 1 year)
+- Features: temperature, hour, day_of_week, month
+- Target: next hour's temperature
+- Neural network architecture: 3-layer feedforward network
+- Training: Adam optimizer with early stopping
+
+### Manual Retraining
+
+You can manually retrain the model using the `/train-model` endpoint:
+
+```bash
+curl -X POST http://localhost:8000/train-model
+```
+
+This will:
+1. Export all available historical data
+2. Preprocess the data
+3. Train a new model
+4. Save the trained model
+5. Return training statistics
+
+### Model Architecture
+
+The model uses a simple neural network:
+- Input layer: 4 features (temperature, hour, day_of_week, month)
+- Hidden layers: 2 layers with 64 neurons each
+- Output layer: 1 neuron (predicted temperature)
+- Activation: ReLU with dropout for regularization
 
 ## Continuous Processing
 
