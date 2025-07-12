@@ -42,11 +42,22 @@ class ModelPredictor:
         """Load the trained model"""
         try:
             if self.config.MODEL_PATH and os.path.exists(self.config.MODEL_PATH):
-                # Add SimpleWeatherModel to safe globals for PyTorch 2.6+ compatibility
-                torch.serialization.add_safe_globals([SimpleWeatherModel])
+                # Add all necessary classes to safe globals for PyTorch 2.6+ compatibility
+                torch.serialization.add_safe_globals([
+                    SimpleWeatherModel,
+                    torch.nn.modules.linear.Linear,
+                    torch.nn.modules.activation.ReLU,
+                    torch.nn.modules.dropout.Dropout
+                ])
                 
-                # Load model and scaler
-                checkpoint = torch.load(self.config.MODEL_PATH, map_location=self.device)
+                # Try loading with weights_only=False for backward compatibility
+                try:
+                    checkpoint = torch.load(self.config.MODEL_PATH, map_location=self.device, weights_only=False)
+                except Exception as e:
+                    logger.warning(f"Failed to load with weights_only=False: {e}")
+                    # Fallback to weights_only=True with proper safe globals
+                    checkpoint = torch.load(self.config.MODEL_PATH, map_location=self.device, weights_only=True)
+                
                 self.model = checkpoint['model']
                 self.scaler = checkpoint['scaler']
                 self.is_trained = checkpoint.get('is_trained', True)
@@ -228,7 +239,32 @@ class ModelPredictor:
     
     def needs_training(self):
         """Check if the model needs to be trained"""
-        return not self.is_trained or self.model is None
+        # Check if model exists and has been properly loaded
+        if self.model is None:
+            return True
+        
+        # Check if model is trained
+        if not self.is_trained:
+            return True
+        
+        # Additional check: verify the model has been properly initialized with weights
+        try:
+            # Check if model has parameters and they're not all zeros
+            has_weights = False
+            for param in self.model.parameters():
+                if param.data.abs().sum().item() > 0:
+                    has_weights = True
+                    break
+            
+            if not has_weights:
+                logger.warning("Model exists but has no trained weights")
+                return True
+                
+        except Exception as e:
+            logger.warning(f"Error checking model weights: {e}")
+            return True
+        
+        return False
     
     def predict(self, df, forecast_hours=24):
         """Make predictions on the data"""
@@ -301,15 +337,35 @@ class ModelPredictor:
                 freq='H'
             )
             
-            # Create future data with extrapolated features
+            # Create future data with proper feature engineering
             future_data = pd.DataFrame(index=future_timestamps)
             future_data['hour'] = future_data.index.hour
             future_data['day_of_week'] = future_data.index.dayofweek
             future_data['month'] = future_data.index.month
             
-            # Use the last known temperature as a starting point
+            # Use a more sophisticated approach for temperature initialization
+            # Start with the last known temperature and add some seasonal variation
             last_temp = current_data['temperature'].iloc[-1] if 'temperature' in current_data.columns else 20.0
-            future_data['temperature'] = last_temp
+            
+            # Create a simple temperature trend (you could make this more sophisticated)
+            # Add some seasonal variation based on hour and month
+            temp_variations = []
+            for i, timestamp in enumerate(future_timestamps):
+                # Base variation: slight cooling trend over time
+                base_variation = -0.1 * i  # Slight cooling trend
+                
+                # Hourly variation: cooler at night, warmer during day
+                hour_variation = 2.0 * np.sin(2 * np.pi * timestamp.hour / 24)
+                
+                # Seasonal variation: cooler in winter months, warmer in summer
+                seasonal_variation = 3.0 * np.sin(2 * np.pi * (timestamp.month - 6) / 12)
+                
+                # Add some random noise for realism
+                noise = np.random.normal(0, 0.5)
+                
+                temp_variations.append(base_variation + hour_variation + seasonal_variation + noise)
+            
+            future_data['temperature'] = last_temp + np.array(temp_variations)
             
             # Make predictions on future data
             predictions_df = self.predict(future_data, forecast_hours=hours_ahead)

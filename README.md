@@ -1,239 +1,76 @@
 # Weather Forecasting API
 
-A continuous weather forecasting system that processes sensor data and provides predictions through a FastAPI REST API.
+A simple weather forecasting API that automatically generates predictions every 10 minutes using machine learning.
 
 ## Features
 
-- **Automatic Model Training**: Trains the ML model on all available historical data on first startup
-- **Continuous Data Processing**: Automatically exports and processes new sensor data at configurable intervals
-- **Machine Learning Predictions**: Uses PyTorch neural networks for weather forecasting
-- **REST API**: FastAPI-based API for accessing predictions and data
-- **Database Integration**: MySQL database for storing sensor data and predictions
-- **Scheduled Processing**: APScheduler for background task management
-- **Real-time Statistics**: API endpoints for system monitoring
-- **Manual Model Retraining**: API endpoint to retrain the model with latest data
+- **Automated Forecasting**: Predictions generated every 10 minutes via scheduled background task
+- **Simple API**: Clean, minimal endpoints for predictions and statistics
+- **Real-time Stats**: Web-based dashboard for monitoring system status
+- **ML-powered**: Neural network model for temperature predictions
+- **Database Integration**: MySQL databases for sensor data and predictions
 
-## Project Structure
+## Quick Start
 
-```
-weather-forecasting/
-├── main.py              # Main application entry point
-├── api.py               # FastAPI application and endpoints
-├── config.py            # Configuration management
-├── data_processor.py    # Database operations and data preprocessing
-├── model_predictor.py   # ML model loading and prediction
-├── scheduler.py         # Background task scheduling
-├── requirements.txt     # Python dependencies
-├── config.env.example   # Environment configuration template
-└── README.md           # This file
-```
+1. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## Setup
+2. **Configure environment**:
+   ```bash
+   cp config.env.example config.env
+   # Edit config.env with your database settings
+   ```
 
-### 1. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. Database Setup
-
-Create two MySQL databases and the required tables:
-
-```sql
--- Create source database (for sensor data)
-CREATE DATABASE sensor_db;
-
--- Create API database (for predictions)
-CREATE DATABASE api_db;
-
--- In the source database, create the sensor data table
-USE sensor_db;
-CREATE TABLE sensor_data (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    timestamp DATETIME NOT NULL,
-    temperature FLOAT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_timestamp (timestamp)
-);
-
--- In the API database, create the predictions table (will be created automatically by the application)
-USE api_db;
-CREATE TABLE predictions (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    timestamp DATETIME,
-    predicted_temperature FLOAT,
-    confidence FLOAT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_timestamp (timestamp)
-);
-```
-
-### 3. Environment Configuration
-
-Copy the example configuration file and update it with your settings:
-
-```bash
-cp config.env.example .env
-```
-
-Edit `.env` with your database and API settings:
-
-```env
-# Source Database Configuration (where sensor data comes from)
-SOURCE_DB_HOST=localhost
-SOURCE_DB_USER=your_source_db_user
-SOURCE_DB_PASSWORD=your_source_db_password
-SOURCE_DB_NAME=sensor_db
-SOURCE_DB_PORT=3306
-
-# API Database Configuration (where predictions are stored)
-API_DB_HOST=localhost
-API_DB_USER=your_api_db_user
-API_DB_PASSWORD=your_api_db_password
-API_DB_NAME=api_db
-API_DB_PORT=3306
-
-# API Configuration
-API_HOST=0.0.0.0
-API_PORT=8000
-API_RELOAD=true
-
-# Model Configuration
-MODEL_PATH=model.pth
-PREDICTION_INTERVAL_MINUTES=60
-
-# Data Export Configuration
-EXPORT_BATCH_SIZE=1000
-```
-
-### 4. Model Setup
-
-The application will automatically train a model on first startup using all available historical data. No pre-trained model is required.
-
-## Running the Application
-
-### Start the API Server
-
-```bash
-python main.py
-```
-
-The API will be available at `http://localhost:8000`
-
-**First Run Behavior:**
-- The application will automatically export all available historical data (up to 1 year)
-- Train a neural network model on this data
-- Save the trained model to `model.pth`
-- Start the prediction scheduler
-
-**Subsequent Runs:**
-- The application will load the previously trained model
-- Continue with normal prediction operations
-
-### API Documentation
-
-Once running, you can access:
-- **Interactive API docs**: `http://localhost:8000/docs`
-- **ReDoc documentation**: `http://localhost:8000/redoc`
+3. **Run the application**:
+   ```bash
+   python main.py
+   ```
 
 ## API Endpoints
 
 ### Core Endpoints
 
 - `GET /` - API information and available endpoints
-- `GET /health` - Health check with model training status
-- `GET /stats` - System statistics
-
-### Data Endpoints
-
-- `GET /latest-data?hours=24` - Get latest sensor data
-- `POST /export-data` - Manually trigger data export
-- `POST /force-initial-export` - Force export of historical data
-- `POST /reset-export-time` - Reset export time to force full data export
-
-### Prediction Endpoints
-
 - `GET /predictions?hours=24` - Get latest predictions from database
-- `POST /forecast` - Generate new weather forecast
+- `GET /next-forecast` - Get the most recent prediction (next forecast)
+- `GET /stats` - System statistics (JSON)
+- `GET /stats-page` - Web-based statistics dashboard
 
-### Model Training Endpoints
-
-- `POST /train-model` - Manually retrain the model on all available data
-
-### Example API Usage
+### Example Usage
 
 ```bash
-# Get system health and model status
-curl http://localhost:8000/health
+# Get latest predictions for the last 24 hours
+curl http://localhost:8000/predictions?hours=24
 
-# Get latest predictions
-curl http://localhost:8000/predictions?hours=48
-
-# Generate new forecast
-curl -X POST http://localhost:8000/forecast \
-  -H "Content-Type: application/json" \
-  -d '{"hours_ahead": 24}'
-
-# Retrain the model
-curl -X POST http://localhost:8000/train-model
+# Get the next forecast (most recent prediction)
+curl http://localhost:8000/next-forecast
 
 # Get system statistics
 curl http://localhost:8000/stats
+
+# View web dashboard
+# Open http://localhost:8000/stats-page in your browser
 ```
 
-## Model Training
+## System Architecture
 
-### Automatic Training
-
-The model is automatically trained on first startup using:
-- All available historical data (up to 1 year)
-- Features: temperature, hour, day_of_week, month
-- Target: next hour's temperature
-- Neural network architecture: 3-layer feedforward network
-- Training: Adam optimizer with early stopping
-
-### Manual Retraining
-
-You can manually retrain the model using the `/train-model` endpoint:
-
-```bash
-curl -X POST http://localhost:8000/train-model
-```
-
-This will:
-1. Export all available historical data
-2. Preprocess the data
-3. Train a new model
-4. Save the trained model
-5. Return training statistics
-
-### Model Architecture
-
-The model uses a simple neural network:
-- Input layer: 4 features (temperature, hour, day_of_week, month)
-- Hidden layers: 2 layers with 64 neurons each
-- Output layer: 1 neuron (predicted temperature)
-- Activation: ReLU with dropout for regularization
-
-## Continuous Processing
-
-The application automatically:
-
-1. **Exports new data** from the database every configured interval
-2. **Preprocesses the data** (resampling, interpolation, feature engineering)
-3. **Generates predictions** using the ML model
-4. **Saves predictions** back to the database
-
-The processing interval is configurable via `PREDICTION_INTERVAL_MINUTES` in the environment file.
-
-## Data Flow
+### Data Flow
 
 ```
-Sensor Data (Source MySQL DB) → Data Export → Preprocessing → ML Model → Predictions → API MySQL DB
+Sensor Data (Source MySQL DB) → Scheduled Export (every 10 min) → ML Model → Predictions → API MySQL DB
 ```
 
-## Configuration Options
+### Components
+
+- **Scheduler**: Runs every 10 minutes to generate new predictions
+- **Data Processor**: Handles data export, preprocessing, and database operations
+- **Model Predictor**: ML model for temperature forecasting
+- **API**: FastAPI server with minimal endpoints
+- **Stats Dashboard**: Real-time web interface for monitoring
+
+## Configuration
 
 | Environment Variable      | Default    | Description                                      |
 |--------------------------|------------|--------------------------------------------------|
@@ -249,57 +86,85 @@ Sensor Data (Source MySQL DB) → Data Export → Preprocessing → ML Model →
 | `API_DB_PORT`            | 3306       | API database port                                |
 | `API_HOST`               | 0.0.0.0    | API server host                                  |
 | `API_PORT`               | 8000       | API server port                                  |
-| `API_RELOAD`             | true       | Enable auto-reload for development               |
-| `MODEL_PATH`             | model.pth  | Path to trained model                            |
-| `PREDICTION_INTERVAL_MINUTES` | 60    | Processing interval in minutes                   |
-| `EXPORT_BATCH_SIZE`      | 1000       | Batch size for data export                       |
+| `PREDICTION_INTERVAL_MINUTES` | 10     | Minutes between prediction runs                  |
 
-## Development
+## Database Schema
 
-### Adding New Features
-
-1. **New API endpoints**: Add to `api.py`
-2. **Data processing**: Extend `data_processor.py`
-3. **Model improvements**: Modify `model_predictor.py`
-4. **Scheduling**: Update `scheduler.py`
-
-### Testing
-
-```bash
-# Test the API
-curl http://localhost:8000/health
-
-# Test data export
-curl -X POST http://localhost:8000/export-data
-
-# Test prediction generation
-curl -X POST http://localhost:8000/forecast
+### Source Database (Sensor Data)
+```sql
+CREATE TABLE timeseries (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    timestamp DATETIME,
+    temperature FLOAT
+);
 ```
+
+### API Database (Predictions)
+```sql
+CREATE TABLE predictions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    timestamp DATETIME,
+    predicted_temperature FLOAT,
+    confidence FLOAT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+## Model Training
+
+The model is automatically trained on startup using available historical data. The training process:
+
+1. Exports all available sensor data
+2. Preprocesses data (resampling, feature engineering)
+3. Trains a neural network model
+4. Saves the trained model for future predictions
 
 ## Monitoring
 
-The application provides several monitoring endpoints:
+### Web Dashboard
+Visit `http://localhost:8000/stats-page` for a real-time dashboard showing:
+- Database statistics
+- Model status
+- Scheduler information
+- System health
 
-- `/health` - Basic health check
-- `/stats` - Detailed system statistics
-- Logs are output to console with timestamps
+### API Statistics
+Use `GET /stats` for programmatic access to system statistics.
+
+## Development
+
+### Running in Development Mode
+```bash
+# Enable auto-reload
+export API_RELOAD=true
+python main.py
+```
+
+### Testing
+```bash
+# Test model loading
+python test_model_loading.py
+
+# Test training
+python test_training.py
+```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Database Connection Error**: Check database credentials and connectivity
-2. **Model Loading Error**: Ensure `model.pth` exists or the application will create a default model
-3. **No Data Processing**: Verify sensor data exists in the database
-4. **API Not Responding**: Check if the server is running on the correct port
+1. **Database Connection Errors**: Check your database configuration in `config.env`
+2. **No Predictions**: Ensure the model is trained and sensor data is available
+3. **Scheduler Not Running**: Check logs for scheduler startup messages
 
 ### Logs
-
-The application logs all operations with different levels:
-- `INFO`: Normal operations
-- `WARNING`: Non-critical issues
-- `ERROR`: Critical errors
+The application logs important events including:
+- Scheduler start/stop
+- Data export operations
+- Model training progress
+- Prediction generation
+- Database operations
 
 ## License
 
-This project is open source and available under the MIT License. 
+This project is licensed under the MIT License. 

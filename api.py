@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional
 import pandas as pd
@@ -15,7 +17,7 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI app
 app = FastAPI(
     title="Weather Forecasting API",
-    description="API for weather prediction and data management",
+    description="API for weather prediction with scheduled forecasting",
     version="1.0.0"
 )
 
@@ -28,6 +30,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 # Initialize components
 config = Config()
 data_processor = DataProcessor()
@@ -39,16 +44,10 @@ class PredictionResponse(BaseModel):
     predicted_temperature: float
     confidence: float
 
-class ForecastRequest(BaseModel):
-    hours_ahead: int = 24
-
-class DataExportResponse(BaseModel):
-    message: str
-    records_exported: int
+class NextForecastResponse(BaseModel):
     timestamp: datetime
-
-class InitialExportRequest(BaseModel):
-    hours_back: int = 168  # Default to 1 week
+    predicted_temperature: float
+    confidence: float
 
 @app.get("/")
 async def root():
@@ -56,30 +55,19 @@ async def root():
     return {
         "message": "Weather Forecasting API",
         "version": "1.0.0",
+        "description": "Simple weather forecasting API with scheduled predictions every 10 minutes",
         "endpoints": {
-            "health": "/health",
             "predictions": "/predictions",
-            "forecast": "/forecast",
-            "export_data": "/export-data",
-            "force_initial_export": "/force-initial-export",
-            "reset_export_time": "/reset-export-time",
-            "latest_data": "/latest-data",
+            "next_forecast": "/next-forecast",
             "stats": "/stats",
-            "train_model": "/train-model"
+            "stats_page": "/stats-page"
         }
     }
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now(),
-        "model_status": {
-            "is_trained": model_predictor.is_trained,
-            "model_loaded": model_predictor.model is not None
-        }
-    }
+@app.get("/stats-page")
+async def stats_page():
+    """Serve the stats HTML page"""
+    return FileResponse("static/stats.html")
 
 @app.get("/predictions", response_model=List[PredictionResponse])
 async def get_predictions(hours: int = 24):
@@ -92,9 +80,9 @@ async def get_predictions(hours: int = 24):
         
         # Convert to response format
         predictions = []
-        for index, row in predictions_df.iterrows():
+        for _, row in predictions_df.iterrows():
             predictions.append(PredictionResponse(
-                timestamp=index,
+                timestamp=row['timestamp'],
                 predicted_temperature=float(row['predicted_temperature']),
                 confidence=float(row['confidence'])
             ))
@@ -105,120 +93,29 @@ async def get_predictions(hours: int = 24):
         logger.error(f"Error getting predictions: {e}")
         raise HTTPException(status_code=500, detail="Error retrieving predictions")
 
-@app.post("/forecast", response_model=List[PredictionResponse])
-async def generate_forecast(request: ForecastRequest):
-    """Generate new weather forecast"""
+@app.get("/next-forecast", response_model=NextForecastResponse)
+async def get_next_forecast():
+    """Get the next forecast (last row from predictions)"""
     try:
-        # Export latest data
-        df = data_processor.export_data()
-        
-        if df.empty:
-            raise HTTPException(status_code=404, detail="No data available for forecasting")
-        
-        # Preprocess data
-        processed_df = data_processor.preprocess_data(df)
-        
-        if processed_df.empty:
-            raise HTTPException(status_code=500, detail="Error preprocessing data")
-        
-        # Generate predictions
-        predictions_df = model_predictor.predict_future(processed_df, hours_ahead=request.hours_ahead)
+        predictions_df = data_processor.get_latest_predictions(hours=24)
         
         if predictions_df.empty:
-            raise HTTPException(status_code=500, detail="Error generating predictions")
+            raise HTTPException(status_code=404, detail="No predictions available")
         
-        # Save predictions to database
-        data_processor.save_predictions(predictions_df)
+        # Get the last row (most recent prediction)
+        last_prediction = predictions_df.iloc[-1]
         
-        # Convert to response format
-        predictions = []
-        for index, row in predictions_df.iterrows():
-            predictions.append(PredictionResponse(
-                timestamp=index,
-                predicted_temperature=float(row['predicted_temperature']),
-                confidence=float(row['confidence'])
-            ))
-        
-        return predictions
+        return NextForecastResponse(
+            timestamp=last_prediction['timestamp'],
+            predicted_temperature=float(last_prediction['predicted_temperature']),
+            confidence=float(last_prediction['confidence'])
+        )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating forecast: {e}")
-        raise HTTPException(status_code=500, detail="Error generating forecast")
-
-@app.post("/export-data", response_model=DataExportResponse)
-async def export_data():
-    """Export new data from database"""
-    try:
-        df = data_processor.export_data()
-        
-        return DataExportResponse(
-            message="Data exported successfully",
-            records_exported=len(df),
-            timestamp=datetime.now()
-        )
-        
-    except Exception as e:
-        logger.error(f"Error exporting data: {e}")
-        raise HTTPException(status_code=500, detail="Error exporting data")
-
-@app.post("/force-initial-export", response_model=DataExportResponse)
-async def force_initial_export(request: InitialExportRequest):
-    """Force an initial data export for model training"""
-    try:
-        df = data_processor.force_initial_export(hours_back=request.hours_back)
-        
-        return DataExportResponse(
-            message=f"Forced initial export from last {request.hours_back} hours",
-            records_exported=len(df),
-            timestamp=datetime.now()
-        )
-        
-    except Exception as e:
-        logger.error(f"Error in forced initial export: {e}")
-        raise HTTPException(status_code=500, detail="Error in forced initial export")
-
-@app.post("/reset-export-time", response_model=dict)
-async def reset_export_time():
-    """Reset the last export time to force a full data export on next call"""
-    try:
-        data_processor.reset_export_time()
-        
-        return {
-            "message": "Export time reset successfully",
-            "timestamp": datetime.now(),
-            "next_export": "will include all available data"
-        }
-        
-    except Exception as e:
-        logger.error(f"Error resetting export time: {e}")
-        raise HTTPException(status_code=500, detail="Error resetting export time")
-
-@app.get("/latest-data")
-async def get_latest_data(hours: int = 24):
-    """Get latest sensor data from source database"""
-    try:
-        df = data_processor.get_latest_sensor_data(hours=hours)
-        
-        # Convert to list of dictionaries
-        data = []
-        for _, row in df.iterrows():
-            data.append({
-                "timestamp": row['timestamp'].isoformat() if pd.notna(row['timestamp']) else None,
-                "temperature": float(row['temperature']) if pd.notna(row['temperature']) else None
-            })
-        
-        return {
-            "data": data,
-            "count": len(data),
-            "hours_requested": hours,
-            "source": "source_database"
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting latest data from source database: {e}")
-        raise HTTPException(status_code=500, detail="Error retrieving latest data")
+        logger.error(f"Error getting next forecast: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving next forecast")
 
 @app.get("/stats")
 async def get_stats():
@@ -228,55 +125,27 @@ async def get_stats():
         api_stats = data_processor.get_api_database_stats()
         
         return {
-            "source_database": source_stats,
-            "api_database": api_stats,
+            "source_database": {
+                "total_records": source_stats.get("sensor_records", 0),
+                "latest_record": source_stats.get("latest_sensor_data"),
+                "status": "online" if source_stats.get("sensor_records", 0) > 0 else "offline"
+            },
+            "api_database": {
+                "total_predictions": api_stats.get("prediction_records", 0),
+                "latest_prediction": api_stats.get("latest_prediction"),
+                "status": "online" if api_stats.get("prediction_records", 0) > 0 else "offline"
+            },
             "model_status": {
                 "is_trained": model_predictor.is_trained,
                 "model_path": config.MODEL_PATH
+            },
+            "scheduler": {
+                "interval_minutes": config.PREDICTION_INTERVAL_MINUTES,
+                "next_run": "Calculated by scheduler"
             },
             "timestamp": datetime.now()
         }
         
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
-        raise HTTPException(status_code=500, detail="Error retrieving statistics")
-
-@app.post("/train-model")
-async def train_model():
-    """Train the model on all available historical data"""
-    try:
-        logger.info("Manual model training requested")
-        
-        # Export all available data for training
-        df = data_processor.force_initial_export(hours_back=8760)  # 1 year of data
-        
-        if df.empty:
-            raise HTTPException(status_code=404, detail="No historical data available for training")
-        
-        logger.info(f"Exported {len(df)} records for training")
-        
-        # Preprocess the data
-        processed_df = data_processor.preprocess_data(df)
-        
-        if processed_df.empty:
-            raise HTTPException(status_code=500, detail="Error preprocessing data for training")
-        
-        logger.info(f"Preprocessed data shape: {processed_df.shape}")
-        
-        # Train the model
-        success = model_predictor.train_model(processed_df, epochs=50, learning_rate=0.001)
-        
-        if success:
-            return {
-                "message": "Model training completed successfully",
-                "records_used": len(df),
-                "timestamp": datetime.now()
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Model training failed")
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error training model: {e}")
-        raise HTTPException(status_code=500, detail="Error training model") 
+        raise HTTPException(status_code=500, detail="Error retrieving statistics") 

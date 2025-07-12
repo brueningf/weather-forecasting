@@ -18,7 +18,7 @@ class WeatherScheduler:
         self.model_predictor = ModelPredictor()
         self.is_running = False
     
-    async def process_weather_data(self):
+    def process_weather_data(self):
         """Main processing job that runs periodically"""
         try:
             logger.info(f"Starting weather data processing at {datetime.now()}")

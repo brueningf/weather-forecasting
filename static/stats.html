@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Forecasting Stats</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#4facfe',
+                        secondary: '#00f2fe',
+                        gradient: {
+                            start: '#667eea',
+                            end: '#764ba2'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gradient-to-br from-gradient-start to-gradient-end min-h-screen p-5">
+    <div x-data="statsApp()" class="max-w-6xl mx-auto bg-white rounded-2xl shadow-2xl overflow-hidden">
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-primary to-secondary text-white p-8 text-center">
+            <h1 class="text-4xl font-bold mb-3">🌤️ Weather Forecasting Stats</h1>
+            <p class="text-lg opacity-90">Real-time statistics and system status</p>
+        </div>
+
+        <!-- Refresh Button -->
+        <button 
+            @click="loadStats()" 
+            class="bg-primary hover:bg-blue-600 text-white border-none py-3 px-6 rounded-full cursor-pointer text-base m-5 transition-colors duration-300"
+            :disabled="loading"
+        >
+            <span x-show="!loading">🔄 Refresh Stats</span>
+            <span x-show="loading">⏳ Loading...</span>
+        </button>
+
+        <!-- Loading State -->
+        <div x-show="loading" class="text-center py-10 text-gray-600">
+            Loading statistics...
+        </div>
+
+        <!-- Error State -->
+        <div 
+            x-show="error" 
+            x-text="error"
+            class="bg-red-100 text-red-800 p-4 rounded-lg mx-5 border border-red-200"
+        ></div>
+
+        <!-- Stats Grid -->
+        <div x-show="!loading && !error" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-8">
+            <!-- Source Database Card -->
+            <div class="bg-gray-50 rounded-xl p-6 border-l-4 border-primary transition-transform duration-300 hover:-translate-y-1 hover:shadow-lg">
+                <h3 class="text-gray-800 mb-4 text-xl font-semibold">Source Database</h3>
+                <div class="space-y-4">
+                    <div>
+                        <div class="text-gray-600 text-sm uppercase tracking-wide">Total Records</div>
+                        <div class="text-2xl font-bold text-primary" x-text="stats.source_database?.total_records || 'N/A'"></div>
+                    </div>
+                    <div>
+                        <div class="text-gray-600 text-sm uppercase tracking-wide">Latest Record</div>
+                        <div class="text-2xl font-bold text-primary" x-text="stats.source_database?.latest_record || 'N/A'"></div>
+                    </div>
+                    <div>
+                        <div class="text-gray-600 text-sm uppercase tracking-wide">Database Status</div>
+                        <div class="text-2xl font-bold text-primary flex items-center">
+                            <span 
+                                class="w-3 h-3 rounded-full mr-2"
+                                :class="getStatusClass(stats.source_database?.status)"
+                            ></span>
+                            <span x-text="stats.source_database?.status || 'Unknown'"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API Database Card -->
+            <div class="bg-gray-50 rounded-xl p-6 border-l-4 border-primary transition-transform duration-300 hover:-translate-y-1 hover:shadow-lg">
+                <h3 class="text-gray-800 mb-4 text-xl font-semibold">API Database</h3>
+                <div class="space-y-4">
+                    <div>
+                        <div class="text-gray-600 text-sm uppercase tracking-wide">Total Predictions</div>
+                        <div class="text-2xl font-bold text-primary" x-text="stats.api_database?.total_predictions || 'N/A'"></div>
+                    </div>
+                    <div>
+                        <div class="text-gray-600 text-sm uppercase tracking-wide">Latest Prediction</div>
+                        <div class="text-2xl font-bold text-primary" x-text="stats.api_database?.latest_prediction || 'N/A'"></div>
+                    </div>
+                    <div>
+                        <div class="text-gray-600 text-sm uppercase tracking-wide">Database Status</div>
+                        <div class="text-2xl font-bold text-primary flex items-center">
+                            <span 
+                                class="w-3 h-3 rounded-full mr-2"
+                                :class="getStatusClass(stats.api_database?.status)"
+                            ></span>
+                            <span x-text="stats.api_database?.status || 'Unknown'"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Model Status Card -->
+            <div class="bg-gray-50 rounded-xl p-6 border-l-4 border-primary transition-transform duration-300 hover:-translate-y-1 hover:shadow-lg">
+                <h3 class="text-gray-800 mb-4 text-xl font-semibold">Model Status</h3>
+                <div class="space-y-4">
+                    <div>
+                        <div class="text-gray-600 text-sm uppercase tracking-wide">Model Trained</div>
+                        <div class="text-2xl font-bold text-primary flex items-center">
+                            <span 
+                                class="w-3 h-3 rounded-full mr-2"
+                                :class="stats.model_status?.is_trained ? 'bg-green-500' : 'bg-red-500'"
+                            ></span>
+                            <span x-text="stats.model_status?.is_trained ? 'Yes' : 'No'"></span>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-gray-600 text-sm uppercase tracking-wide">Model Path</div>
+                        <div class="text-2xl font-bold text-primary" x-text="stats.model_status?.model_path || 'N/A'"></div>
+                    </div>
+                    <div>
+                        <div class="text-gray-600 text-sm uppercase tracking-wide">Scheduler Interval</div>
+                        <div class="text-2xl font-bold text-primary" x-text="`${stats.scheduler?.interval_minutes || 'N/A'} minutes`"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Timestamp -->
+        <div class="text-center text-gray-600 text-sm py-5 border-t border-gray-200" x-text="`Last updated: ${lastUpdated}`"></div>
+    </div>
+
+    <script>
+        function statsApp() {
+            return {
+                loading: false,
+                error: null,
+                stats: {},
+                lastUpdated: 'Never',
+
+                async loadStats() {
+                    this.loading = true;
+                    this.error = null;
+
+                    try {
+                        const response = await fetch('/stats');
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        
+                        this.stats = await response.json();
+                        this.lastUpdated = new Date(this.stats.timestamp).toLocaleString();
+                        
+                    } catch (error) {
+                        console.error('Error loading stats:', error);
+                        this.error = `Error loading statistics: ${error.message}`;
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                getStatusClass(status) {
+                    if (status === 'online' || status === 'Yes') {
+                        return 'bg-green-500';
+                    } else if (status === 'offline' || status === 'No') {
+                        return 'bg-red-500';
+                    } else {
+                        return 'bg-gray-500';
+                    }
+                },
+
+                init() {
+                    this.loadStats();
+                    // Auto-refresh every 30 seconds
+                    setInterval(() => this.loadStats(), 30000);
+                }
+            }
+        }
+    </script>
+</body>
+</html> 

@@ -26,7 +26,7 @@ class Config:
     
     # Model Configuration
     MODEL_PATH = os.getenv('MODEL_PATH', 'model.pth')
-    PREDICTION_INTERVAL_MINUTES = int(os.getenv('PREDICTION_INTERVAL_MINUTES', 60))
+    PREDICTION_INTERVAL_MINUTES = int(os.getenv('PREDICTION_INTERVAL_MINUTES', 10))
     
     # Data Export Configuration
     EXPORT_BATCH_SIZE = int(os.getenv('EXPORT_BATCH_SIZE', 1000)) 
