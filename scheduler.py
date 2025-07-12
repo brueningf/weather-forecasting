@@ -11,11 +11,11 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 class WeatherScheduler:
-    def __init__(self):
+    def __init__(self, model_predictor=None):
         self.config = Config()
         self.scheduler = AsyncIOScheduler()
         self.data_processor = DataProcessor()
-        self.model_predictor = ModelPredictor()
+        self.model_predictor = model_predictor if model_predictor else ModelPredictor()
         self.is_running = False
     
     def process_weather_data(self):
@@ -55,6 +55,9 @@ class WeatherScheduler:
             
         except Exception as e:
             logger.error(f"Error in weather data processing: {e}")
+    
+    def run_once(self):
+        self.process_weather_data()
     
     def start(self):
         """Start the scheduler"""
@@ -106,12 +109,23 @@ class WeatherScheduler:
         }
 
 # Global scheduler instance
-scheduler = WeatherScheduler()
+scheduler = None
 
-async def start_scheduler():
+def create_scheduler(model_predictor=None):
+    """Create a new scheduler instance with optional model predictor"""
+    global scheduler
+    scheduler = WeatherScheduler(model_predictor)
+    return scheduler
+
+async def start_scheduler(model_predictor=None):
     """Start the scheduler (for use in main.py)"""
+    global scheduler
+    if scheduler is None:
+        scheduler = create_scheduler(model_predictor)
     scheduler.start()
 
 async def stop_scheduler():
     """Stop the scheduler (for use in main.py)"""
-    scheduler.stop() 
+    global scheduler
+    if scheduler:
+        scheduler.stop() 

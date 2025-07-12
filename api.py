@@ -49,6 +49,11 @@ class NextForecastResponse(BaseModel):
     predicted_temperature: float
     confidence: float
 
+class ActualTemperatureResponse(BaseModel):
+    timestamp: datetime
+    temperature: float
+    module: str
+
 @app.get("/")
 async def root():
     """Root endpoint with API information"""
@@ -59,8 +64,10 @@ async def root():
         "endpoints": {
             "predictions": "/predictions",
             "next_forecast": "/next-forecast",
+            "sensor_data": "/sensor-data",
             "stats": "/stats",
-            "stats_page": "/stats-page"
+            "stats_page": "/stats-page",
+            "temperature_graph": "/temperature-graph"
         }
     }
 
@@ -68,6 +75,11 @@ async def root():
 async def stats_page():
     """Serve the stats HTML page"""
     return FileResponse("static/stats.html")
+
+@app.get("/temperature-graph")
+async def temperature_graph_page():
+    """Serve the temperature comparison graph HTML page"""
+    return FileResponse("static/temperature-graph.html")
 
 @app.get("/predictions", response_model=List[PredictionResponse])
 async def get_predictions(hours: int = 24):
@@ -116,6 +128,50 @@ async def get_next_forecast():
     except Exception as e:
         logger.error(f"Error getting next forecast: {e}")
         raise HTTPException(status_code=500, detail="Error retrieving next forecast")
+
+@app.get("/sensor-data", response_model=List[ActualTemperatureResponse])
+async def get_sensor_data(hours: int = 24, module_id: Optional[str] = None):
+    """Get actual temperature data from source database"""
+    try:
+        sensor_df = data_processor.get_latest_sensor_data(hours=hours, module_id=module_id)
+        
+        if sensor_df.empty:
+            return []
+        
+        # Convert to response format
+        temperatures = []
+        for _, row in sensor_df.iterrows():
+            temperatures.append(ActualTemperatureResponse(
+                timestamp=row['timestamp'],
+                temperature=float(row['temperature']),
+                module=str(row.get('module', 'unknown'))
+            ))
+        
+        return temperatures
+        
+    except Exception as e:
+        logger.error(f"Error getting sensor data: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving sensor data")
+
+@app.get("/modules")
+async def get_available_modules():
+    """Get list of available sensor modules"""
+    try:
+        query = f"""
+            SELECT DISTINCT module 
+            FROM {data_processor.sensor_data_table}
+            WHERE module IS NOT NULL
+            ORDER BY module
+        """
+        
+        df = pd.read_sql(query, data_processor.source_engine)
+        modules = df['module'].tolist() if not df.empty else []
+        
+        return {"modules": modules}
+        
+    except Exception as e:
+        logger.error(f"Error getting available modules: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving modules")
 
 @app.get("/stats")
 async def get_stats():

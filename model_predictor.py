@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class SimpleWeatherModel(nn.Module):
     """Simple neural network for weather prediction"""
-    def __init__(self, input_size=4, hidden_size=64, output_size=1):
+    def __init__(self, input_size=10, hidden_size=64, output_size=1):
         super(SimpleWeatherModel, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
@@ -99,22 +99,52 @@ class ModelPredictor:
             return None, None
         
         try:
-            # Select features for training
-            features = ['temperature', 'hour', 'day_of_week', 'month']
-            available_features = [f for f in features if f in df.columns]
+            # Create enhanced temporal features
+            df_enhanced = df.copy()
             
-            if len(available_features) < 2:
+            # Basic temporal features
+            df_enhanced['hour'] = df_enhanced.index.hour
+            df_enhanced['day_of_week'] = df_enhanced.index.dayofweek
+            df_enhanced['month'] = df_enhanced.index.month
+            
+            # Enhanced temporal features for better pattern recognition
+            # Sinusoidal encoding of hour (captures cyclical nature of day)
+            df_enhanced['hour_sin'] = np.sin(2 * np.pi * df_enhanced['hour'] / 24)
+            df_enhanced['hour_cos'] = np.cos(2 * np.pi * df_enhanced['hour'] / 24)
+            
+            # Sinusoidal encoding of month (captures cyclical nature of year)
+            df_enhanced['month_sin'] = np.sin(2 * np.pi * df_enhanced['month'] / 12)
+            df_enhanced['month_cos'] = np.cos(2 * np.pi * df_enhanced['month'] / 12)
+            
+            # Day of week encoding
+            df_enhanced['day_sin'] = np.sin(2 * np.pi * df_enhanced['day_of_week'] / 7)
+            df_enhanced['day_cos'] = np.cos(2 * np.pi * df_enhanced['day_of_week'] / 7)
+            
+            # Time-based features
+            df_enhanced['is_night'] = ((df_enhanced['hour'] >= 22) | (df_enhanced['hour'] <= 6)).astype(int)
+            df_enhanced['is_day'] = ((df_enhanced['hour'] >= 6) & (df_enhanced['hour'] <= 18)).astype(int)
+            df_enhanced['is_peak_hours'] = ((df_enhanced['hour'] >= 12) & (df_enhanced['hour'] <= 16)).astype(int)
+            
+            # Select features for training (prioritize enhanced temporal features)
+            features = [
+                'temperature', 'hour_sin', 'hour_cos', 'month_sin', 'month_cos',
+                'day_sin', 'day_cos', 'is_night', 'is_day', 'is_peak_hours'
+            ]
+            
+            available_features = [f for f in features if f in df_enhanced.columns]
+            
+            if len(available_features) < 3:
                 logger.warning("Insufficient features for training")
                 return None, None
             
             # Create feature matrix
-            X = df[available_features].values
+            X = df_enhanced[available_features].values
             
             # Handle missing values
             X = np.nan_to_num(X, nan=0.0)
             
             # Create target (next hour's temperature)
-            y = df['temperature'].values[1:]  # Shift by 1 hour
+            y = df_enhanced['temperature'].values[1:]  # Shift by 1 hour
             X = X[:-1]  # Remove last row since we don't have next temperature
             
             if len(X) < 10:
@@ -208,16 +238,46 @@ class ModelPredictor:
             return None
         
         try:
-            # Select features for prediction
-            features = ['temperature', 'hour', 'day_of_week', 'month']
-            available_features = [f for f in features if f in df.columns]
+            # Create enhanced temporal features (same as in prepare_training_data)
+            df_enhanced = df.copy()
+            
+            # Basic temporal features
+            df_enhanced['hour'] = df_enhanced.index.hour
+            df_enhanced['day_of_week'] = df_enhanced.index.dayofweek
+            df_enhanced['month'] = df_enhanced.index.month
+            
+            # Enhanced temporal features for better pattern recognition
+            # Sinusoidal encoding of hour (captures cyclical nature of day)
+            df_enhanced['hour_sin'] = np.sin(2 * np.pi * df_enhanced['hour'] / 24)
+            df_enhanced['hour_cos'] = np.cos(2 * np.pi * df_enhanced['hour'] / 24)
+            
+            # Sinusoidal encoding of month (captures cyclical nature of year)
+            df_enhanced['month_sin'] = np.sin(2 * np.pi * df_enhanced['month'] / 12)
+            df_enhanced['month_cos'] = np.cos(2 * np.pi * df_enhanced['month'] / 12)
+            
+            # Day of week encoding
+            df_enhanced['day_sin'] = np.sin(2 * np.pi * df_enhanced['day_of_week'] / 7)
+            df_enhanced['day_cos'] = np.cos(2 * np.pi * df_enhanced['day_of_week'] / 7)
+            
+            # Time-based features
+            df_enhanced['is_night'] = ((df_enhanced['hour'] >= 22) | (df_enhanced['hour'] <= 6)).astype(int)
+            df_enhanced['is_day'] = ((df_enhanced['hour'] >= 6) & (df_enhanced['hour'] <= 18)).astype(int)
+            df_enhanced['is_peak_hours'] = ((df_enhanced['hour'] >= 12) & (df_enhanced['hour'] <= 16)).astype(int)
+            
+            # Select features for prediction (same as training)
+            features = [
+                'temperature', 'hour_sin', 'hour_cos', 'month_sin', 'month_cos',
+                'day_sin', 'day_cos', 'is_night', 'is_day', 'is_peak_hours'
+            ]
+            
+            available_features = [f for f in features if f in df_enhanced.columns]
             
             if not available_features:
                 logger.warning("No suitable features found for prediction")
                 return None
             
             # Create feature matrix
-            X = df[available_features].values
+            X = df_enhanced[available_features].values
             
             # Handle missing values
             X = np.nan_to_num(X, nan=0.0)
@@ -277,8 +337,47 @@ class ModelPredictor:
             return pd.DataFrame()
         
         try:
-            # Prepare input tensor
-            X_tensor = self.prepare_input_tensor(df)
+            # For forecasting, we need to create future timestamps with proper features
+            last_timestamp = df.index[-1] if not df.empty else datetime.now()
+            future_timestamps = pd.date_range(
+                start=last_timestamp + timedelta(hours=1),
+                periods=forecast_hours,
+                freq='H'
+            )
+            
+            # Create future data with proper temporal features
+            future_data = pd.DataFrame(index=future_timestamps)
+            future_data['hour'] = future_data.index.hour
+            future_data['day_of_week'] = future_data.index.dayofweek
+            future_data['month'] = future_data.index.month
+            
+            # Get the last known temperature as starting point
+            last_temp = df['temperature'].iloc[-1] if 'temperature' in df.columns else 20.0
+            
+            # Create a more sophisticated temperature initialization based on time patterns
+            temp_variations = []
+            for i, timestamp in enumerate(future_timestamps):
+                # Base diurnal pattern: cooler at night (2-6 AM), warmer during day (12-4 PM)
+                hour_rad = 2 * np.pi * timestamp.hour / 24
+                diurnal_variation = 3.0 * np.sin(hour_rad - np.pi/2)  # Peak at 2 PM, trough at 2 AM
+                
+                # Seasonal pattern: cooler in winter, warmer in summer
+                month_rad = 2 * np.pi * (timestamp.month - 1) / 12
+                seasonal_variation = 5.0 * np.sin(month_rad - np.pi/2)  # Peak in July, trough in January
+                
+                # Gradual trend: slight cooling over the forecast period
+                trend = -0.05 * i
+                
+                # Add small random component for realism
+                noise = np.random.normal(0, 0.3)
+                
+                temp_variations.append(diurnal_variation + seasonal_variation + trend + noise)
+            
+            # Initialize future temperatures with the pattern
+            future_data['temperature'] = last_temp + np.array(temp_variations)
+            
+            # Prepare input tensor for the future data
+            X_tensor = self.prepare_input_tensor(future_data)
             if X_tensor is None:
                 return pd.DataFrame()
             
@@ -289,27 +388,15 @@ class ModelPredictor:
             
             # Create predictions dataframe
             if len(predictions) > 0:
-                # Use existing timestamps if available, otherwise generate future timestamps
-                if len(predictions) <= len(df):
-                    timestamps = df.index[:len(predictions)]
-                else:
-                    # Generate future timestamps
-                    last_timestamp = df.index[-1] if not df.empty else datetime.now()
-                    timestamps = pd.date_range(
-                        start=last_timestamp + timedelta(hours=1),
-                        periods=len(predictions),
-                        freq='H'
-                    )
-                
                 predictions_df = pd.DataFrame({
-                    'timestamp': timestamps,
+                    'timestamp': future_timestamps,
                     'predicted_temperature': predictions,
                     'confidence': 0.8  # Default confidence
                 })
                 
                 predictions_df.set_index('timestamp', inplace=True)
                 
-                logger.info(f"Generated {len(predictions_df)} predictions")
+                logger.info(f"Generated {len(predictions_df)} predictions for future timestamps")
                 return predictions_df
             
             return pd.DataFrame()
@@ -329,46 +416,8 @@ class ModelPredictor:
                 logger.warning("Model is not trained. Cannot make predictions.")
                 return pd.DataFrame()
             
-            # Generate future timestamps
-            last_timestamp = current_data.index[-1]
-            future_timestamps = pd.date_range(
-                start=last_timestamp + timedelta(hours=1),
-                periods=hours_ahead,
-                freq='H'
-            )
-            
-            # Create future data with proper feature engineering
-            future_data = pd.DataFrame(index=future_timestamps)
-            future_data['hour'] = future_data.index.hour
-            future_data['day_of_week'] = future_data.index.dayofweek
-            future_data['month'] = future_data.index.month
-            
-            # Use a more sophisticated approach for temperature initialization
-            # Start with the last known temperature and add some seasonal variation
-            last_temp = current_data['temperature'].iloc[-1] if 'temperature' in current_data.columns else 20.0
-            
-            # Create a simple temperature trend (you could make this more sophisticated)
-            # Add some seasonal variation based on hour and month
-            temp_variations = []
-            for i, timestamp in enumerate(future_timestamps):
-                # Base variation: slight cooling trend over time
-                base_variation = -0.1 * i  # Slight cooling trend
-                
-                # Hourly variation: cooler at night, warmer during day
-                hour_variation = 2.0 * np.sin(2 * np.pi * timestamp.hour / 24)
-                
-                # Seasonal variation: cooler in winter months, warmer in summer
-                seasonal_variation = 3.0 * np.sin(2 * np.pi * (timestamp.month - 6) / 12)
-                
-                # Add some random noise for realism
-                noise = np.random.normal(0, 0.5)
-                
-                temp_variations.append(base_variation + hour_variation + seasonal_variation + noise)
-            
-            future_data['temperature'] = last_temp + np.array(temp_variations)
-            
-            # Make predictions on future data
-            predictions_df = self.predict(future_data, forecast_hours=hours_ahead)
+            # Use the main predict method which now handles temporal predictions properly
+            predictions_df = self.predict(current_data, forecast_hours=hours_ahead)
             
             return predictions_df
             

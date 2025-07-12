@@ -19,14 +19,15 @@ logger = logging.getLogger(__name__)
 # Global config
 config = Config()
 
-async def train_initial_model():
+async def train_initial_model(model_predictor=None):
     """Train the model on all available historical data"""
     try:
         logger.info("Starting initial model training...")
         
         # Initialize components
         data_processor = DataProcessor()
-        model_predictor = ModelPredictor()
+        if model_predictor is None:
+            model_predictor = ModelPredictor()
         
         # Check if model needs training
         if not model_predictor.needs_training():
@@ -72,11 +73,20 @@ async def lifespan(app):
     # Startup
     logger.info("Starting Weather Forecasting API...")
     try:
-        # Train model on startup if needed
-        await train_initial_model()
+        # Initialize components
+        data_processor = DataProcessor()
+        model_predictor = ModelPredictor()
         
-        # Start scheduler
-        await start_scheduler()
+        # Train model on startup if needed
+        if model_predictor.needs_training():
+            await train_initial_model(model_predictor)
+        else:
+            logger.info("Model is already trained, skipping initial training")
+        
+        # Start scheduler with the trained model predictor
+        await start_scheduler(model_predictor)
+        from scheduler import scheduler
+        scheduler.run_once()
         logger.info("Scheduler started successfully")
     except Exception as e:
         logger.error(f"Failed to start scheduler: {e}")

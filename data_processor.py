@@ -47,19 +47,13 @@ class DataProcessor:
         try:
             # Get last export time or use a default
             if self.last_export_time is None:
-                # Get the latest timestamp from the source database
-                with self.source_engine.connect() as conn:
-                    result = conn.execute(text(f"SELECT MAX(timestamp) FROM {self.sensor_data_table}"))
-                    row = result.fetchone()
-                    if row[0]:
-                        self.last_export_time = row[0]
-                    else:
-                        # If no data exists, use 24 hours ago
-                        self.last_export_time = datetime.now() - timedelta(hours=24)
+                # On first run, export the last 24 hours of data
+                self.last_export_time = datetime.now() - timedelta(hours=24)
+                logger.info("First run: exporting last 24 hours of data")
             
             # Query for new data from source database
             query = f"""
-                SELECT timestamp, temperature 
+                SELECT timestamp, temperature, module 
                 FROM {self.sensor_data_table} 
                 WHERE timestamp > %s 
                 ORDER BY timestamp
@@ -89,8 +83,31 @@ class DataProcessor:
             # Convert timestamp to datetime
             df['timestamp'] = pd.to_datetime(df['timestamp'])
             
-            # Set timestamp as index and resample to hourly
-            df = df.set_index('timestamp').resample('1H').mean()
+            # Set timestamp as index
+            df = df.set_index('timestamp')
+            
+            # Separate numeric and non-numeric columns
+            numeric_columns = df.select_dtypes(include=[np.number]).columns
+            non_numeric_columns = df.select_dtypes(exclude=[np.number]).columns
+            
+            # Resample numeric columns with mean
+            if len(numeric_columns) > 0:
+                df_numeric = df[numeric_columns].resample('1h').mean()
+            else:
+                df_numeric = pd.DataFrame(index=df.resample('1h').mean().index)
+            
+            logger.info(f"Resampled numeric columns: {list(numeric_columns)}")
+            logger.info(f"Non-numeric columns found: {list(non_numeric_columns)}")
+            # log first row
+            if not df_numeric.empty:
+                logger.info(f"First row after resampling: {df_numeric.iloc[0].to_dict()}")
+            # For non-numeric columns, we can either drop them or handle them differently
+            # For now, let's drop them since they're not needed for temperature prediction
+            if len(non_numeric_columns) > 0:
+                logger.info(f"Dropping non-numeric columns for resampling: {list(non_numeric_columns)}")
+            
+            # Use only numeric columns for the final dataframe
+            df = df_numeric
             
             # Interpolate missing values
             df.interpolate(method='linear', inplace=True)
@@ -170,19 +187,29 @@ class DataProcessor:
             logger.error(f"Error getting latest predictions from API database: {e}")
             return pd.DataFrame()
     
-    def get_latest_sensor_data(self, hours=24):
+    def get_latest_sensor_data(self, hours=24, module_id=None):
         """Get latest sensor data from source database"""
         try:
-            query = f"""
-                SELECT timestamp, temperature
-                FROM {self.sensor_data_table}
-                WHERE timestamp >= %s
-                ORDER BY timestamp DESC
-                LIMIT 1000
-            """
-            
-            cutoff_time = datetime.now() - timedelta(hours=hours)
-            df = pd.read_sql(query, self.source_engine, params=(cutoff_time,))
+            if module_id:
+                query = f"""
+                    SELECT timestamp, temperature, module
+                    FROM {self.sensor_data_table}
+                    WHERE timestamp >= %s AND module = %s
+                    ORDER BY timestamp DESC
+                    LIMIT 1000
+                """
+                cutoff_time = datetime.now() - timedelta(hours=hours)
+                df = pd.read_sql(query, self.source_engine, params=(cutoff_time, module_id))
+            else:
+                query = f"""
+                    SELECT timestamp, temperature, module
+                    FROM {self.sensor_data_table}
+                    WHERE timestamp >= %s
+                    ORDER BY timestamp DESC
+                    LIMIT 1000
+                """
+                cutoff_time = datetime.now() - timedelta(hours=hours)
+                df = pd.read_sql(query, self.source_engine, params=(cutoff_time,))
             
             return df
             
@@ -255,7 +282,7 @@ class DataProcessor:
             
             # Query for data from the cutoff time
             query = f"""
-                SELECT timestamp, temperature 
+                SELECT timestamp, temperature, module 
                 FROM {self.sensor_data_table} 
                 WHERE timestamp > %s 
                 ORDER BY timestamp
