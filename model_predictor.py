@@ -104,6 +104,7 @@ class ModelPredictor:
             
             # Basic temporal features
             df_enhanced['hour'] = df_enhanced.index.hour
+            df_enhanced['minute'] = df_enhanced.index.minute
             df_enhanced['day_of_week'] = df_enhanced.index.dayofweek
             df_enhanced['month'] = df_enhanced.index.month
             
@@ -111,6 +112,10 @@ class ModelPredictor:
             # Sinusoidal encoding of hour (captures cyclical nature of day)
             df_enhanced['hour_sin'] = np.sin(2 * np.pi * df_enhanced['hour'] / 24)
             df_enhanced['hour_cos'] = np.cos(2 * np.pi * df_enhanced['hour'] / 24)
+            
+            # Sinusoidal encoding of minute (captures cyclical nature of hour)
+            df_enhanced['minute_sin'] = np.sin(2 * np.pi * df_enhanced['minute'] / 60)
+            df_enhanced['minute_cos'] = np.cos(2 * np.pi * df_enhanced['minute'] / 60)
             
             # Sinusoidal encoding of month (captures cyclical nature of year)
             df_enhanced['month_sin'] = np.sin(2 * np.pi * df_enhanced['month'] / 12)
@@ -125,15 +130,18 @@ class ModelPredictor:
             df_enhanced['is_day'] = ((df_enhanced['hour'] >= 6) & (df_enhanced['hour'] <= 18)).astype(int)
             df_enhanced['is_peak_hours'] = ((df_enhanced['hour'] >= 12) & (df_enhanced['hour'] <= 16)).astype(int)
             
-            # Select features for training (prioritize enhanced temporal features)
+            # Select features for training (include weather variables)
             features = [
-                'temperature', 'hour_sin', 'hour_cos', 'month_sin', 'month_cos',
-                'day_sin', 'day_cos', 'is_night', 'is_day', 'is_peak_hours'
+                'temperature', 'humidity', 'pressure',
+                'temperature_normalized', 'humidity_normalized', 'pressure_normalized',
+                'hour_sin', 'hour_cos', 'minute_sin', 'minute_cos',
+                'month_sin', 'month_cos', 'day_sin', 'day_cos',
+                'is_night', 'is_day', 'is_peak_hours'
             ]
             
             available_features = [f for f in features if f in df_enhanced.columns]
             
-            if len(available_features) < 3:
+            if len(available_features) < 5:
                 logger.warning("Insufficient features for training")
                 return None, None
             
@@ -143,8 +151,8 @@ class ModelPredictor:
             # Handle missing values
             X = np.nan_to_num(X, nan=0.0)
             
-            # Create target (next hour's temperature)
-            y = df_enhanced['temperature'].values[1:]  # Shift by 1 hour
+            # Create target (next 10-minute period's temperature)
+            y = df_enhanced['temperature'].values[1:]  # Shift by 1 period
             X = X[:-1]  # Remove last row since we don't have next temperature
             
             if len(X) < 10:
@@ -243,6 +251,7 @@ class ModelPredictor:
             
             # Basic temporal features
             df_enhanced['hour'] = df_enhanced.index.hour
+            df_enhanced['minute'] = df_enhanced.index.minute
             df_enhanced['day_of_week'] = df_enhanced.index.dayofweek
             df_enhanced['month'] = df_enhanced.index.month
             
@@ -250,6 +259,10 @@ class ModelPredictor:
             # Sinusoidal encoding of hour (captures cyclical nature of day)
             df_enhanced['hour_sin'] = np.sin(2 * np.pi * df_enhanced['hour'] / 24)
             df_enhanced['hour_cos'] = np.cos(2 * np.pi * df_enhanced['hour'] / 24)
+            
+            # Sinusoidal encoding of minute (captures cyclical nature of hour)
+            df_enhanced['minute_sin'] = np.sin(2 * np.pi * df_enhanced['minute'] / 60)
+            df_enhanced['minute_cos'] = np.cos(2 * np.pi * df_enhanced['minute'] / 60)
             
             # Sinusoidal encoding of month (captures cyclical nature of year)
             df_enhanced['month_sin'] = np.sin(2 * np.pi * df_enhanced['month'] / 12)
@@ -266,8 +279,11 @@ class ModelPredictor:
             
             # Select features for prediction (same as training)
             features = [
-                'temperature', 'hour_sin', 'hour_cos', 'month_sin', 'month_cos',
-                'day_sin', 'day_cos', 'is_night', 'is_day', 'is_peak_hours'
+                'temperature', 'humidity', 'pressure',
+                'temperature_normalized', 'humidity_normalized', 'pressure_normalized',
+                'hour_sin', 'hour_cos', 'minute_sin', 'minute_cos',
+                'month_sin', 'month_cos', 'day_sin', 'day_cos',
+                'is_night', 'is_day', 'is_peak_hours'
             ]
             
             available_features = [f for f in features if f in df_enhanced.columns]
@@ -326,7 +342,7 @@ class ModelPredictor:
         
         return False
     
-    def predict(self, df, forecast_hours=24):
+    def predict(self, df, forecast_periods=144):  # 144 periods = 24 hours (10-minute intervals)
         """Make predictions on the data"""
         if df.empty:
             logger.warning("Empty dataframe provided for prediction")
@@ -340,41 +356,57 @@ class ModelPredictor:
             # For forecasting, we need to create future timestamps with proper features
             last_timestamp = df.index[-1] if not df.empty else datetime.now()
             future_timestamps = pd.date_range(
-                start=last_timestamp + timedelta(hours=1),
-                periods=forecast_hours,
-                freq='H'
+                start=last_timestamp + timedelta(minutes=10),
+                periods=forecast_periods,
+                freq='10T'  # 10-minute frequency
             )
             
             # Create future data with proper temporal features
             future_data = pd.DataFrame(index=future_timestamps)
             future_data['hour'] = future_data.index.hour
+            future_data['minute'] = future_data.index.minute
             future_data['day_of_week'] = future_data.index.dayofweek
             future_data['month'] = future_data.index.month
             
-            # Get the last known temperature as starting point
+            # Get the last known values as starting points
             last_temp = df['temperature'].iloc[-1] if 'temperature' in df.columns else 20.0
+            last_humidity = df['humidity'].iloc[-1] if 'humidity' in df.columns else 50.0
+            last_pressure = df['pressure'].iloc[-1] if 'pressure' in df.columns else 1013.0
             
-            # Create a more sophisticated temperature initialization based on time patterns
+            # Create a more sophisticated initialization based on time patterns
             temp_variations = []
+            humidity_variations = []
+            pressure_variations = []
+            
             for i, timestamp in enumerate(future_timestamps):
                 # Base diurnal pattern: cooler at night (2-6 AM), warmer during day (12-4 PM)
                 hour_rad = 2 * np.pi * timestamp.hour / 24
-                diurnal_variation = 3.0 * np.sin(hour_rad - np.pi/2)  # Peak at 2 PM, trough at 2 AM
+                diurnal_temp_variation = 3.0 * np.sin(hour_rad - np.pi/2)  # Peak at 2 PM, trough at 2 AM
                 
                 # Seasonal pattern: cooler in winter, warmer in summer
                 month_rad = 2 * np.pi * (timestamp.month - 1) / 12
-                seasonal_variation = 5.0 * np.sin(month_rad - np.pi/2)  # Peak in July, trough in January
+                seasonal_temp_variation = 5.0 * np.sin(month_rad - np.pi/2)  # Peak in July, trough in January
                 
                 # Gradual trend: slight cooling over the forecast period
-                trend = -0.05 * i
+                temp_trend = -0.01 * i
                 
                 # Add small random component for realism
-                noise = np.random.normal(0, 0.3)
+                temp_noise = np.random.normal(0, 0.2)
                 
-                temp_variations.append(diurnal_variation + seasonal_variation + trend + noise)
+                # Humidity variations (inverse relationship with temperature)
+                humidity_variation = -2.0 * diurnal_temp_variation + np.random.normal(0, 1.0)
+                
+                # Pressure variations (small random fluctuations)
+                pressure_variation = np.random.normal(0, 0.5)
+                
+                temp_variations.append(diurnal_temp_variation + seasonal_temp_variation + temp_trend + temp_noise)
+                humidity_variations.append(humidity_variation)
+                pressure_variations.append(pressure_variation)
             
-            # Initialize future temperatures with the pattern
+            # Initialize future values with the patterns
             future_data['temperature'] = last_temp + np.array(temp_variations)
+            future_data['humidity'] = np.clip(last_humidity + np.array(humidity_variations), 0, 100)
+            future_data['pressure'] = last_pressure + np.array(pressure_variations)
             
             # Prepare input tensor for the future data
             X_tensor = self.prepare_input_tensor(future_data)
@@ -396,7 +428,7 @@ class ModelPredictor:
                 
                 predictions_df.set_index('timestamp', inplace=True)
                 
-                logger.info(f"Generated {len(predictions_df)} predictions for future timestamps")
+                logger.info(f"Generated {len(predictions_df)} predictions for future timestamps (10-minute intervals)")
                 return predictions_df
             
             return pd.DataFrame()
@@ -416,8 +448,11 @@ class ModelPredictor:
                 logger.warning("Model is not trained. Cannot make predictions.")
                 return pd.DataFrame()
             
+            # Convert hours to 10-minute periods
+            forecast_periods = hours_ahead * 6  # 6 periods per hour
+            
             # Use the main predict method which now handles temporal predictions properly
-            predictions_df = self.predict(current_data, forecast_hours=hours_ahead)
+            predictions_df = self.predict(current_data, forecast_periods=forecast_periods)
             
             return predictions_df
             

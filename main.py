@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from api import app
 from scheduler import start_scheduler, stop_scheduler
 from config import Config
-from data_processor import DataProcessor
+from weather_data_controller import WeatherDataController
 from model_predictor import ModelPredictor
 
 # Configure logging
@@ -20,12 +20,12 @@ logger = logging.getLogger(__name__)
 config = Config()
 
 async def train_initial_model(model_predictor=None):
-    """Train the model on all available historical data"""
+    """Train the model on preprocessed data from the database"""
     try:
         logger.info("Starting initial model training...")
         
         # Initialize components
-        data_processor = DataProcessor()
+        data_processor = WeatherDataController()
         if model_predictor is None:
             model_predictor = ModelPredictor()
         
@@ -34,24 +34,23 @@ async def train_initial_model(model_predictor=None):
             logger.info("Model is already trained, skipping initial training")
             return True
         
-        # Export all available data for training
-        logger.info("Exporting all available historical data for training...")
-        df = data_processor.force_initial_export(hours_back=8760)  # 1 year of data
-        
-        if df.empty:
-            logger.warning("No historical data available for training")
-            return False
-        
-        logger.info(f"Exported {len(df)} records for training")
-        
-        # Preprocess the data
-        processed_df = data_processor.preprocess_data(df)
+        # Get preprocessed data from database for training
+        logger.info("Loading preprocessed data for model training...")
+        processed_df = data_processor.fetch_training_data(hours_back=8760)  # 1 year of data
         
         if processed_df.empty:
-            logger.error("No data after preprocessing")
-            return False
+            logger.warning("No preprocessed data available for training")
+            logger.info("Triggering data preprocessing first...")
+            # Trigger preprocessing if no data exists
+            raw_df, processed_df = data_processor.process_and_store_new_data(
+                force_full_export=True, 
+                hours_back=8760
+            )
+            if processed_df is None or processed_df.empty:
+                logger.error("Failed to preprocess data for training")
+                return False
         
-        logger.info(f"Preprocessed data shape: {processed_df.shape}")
+        logger.info(f"Training data shape: {processed_df.shape}")
         
         # Train the model
         success = model_predictor.train_model(processed_df, epochs=50, learning_rate=0.001)
@@ -74,7 +73,7 @@ async def lifespan(app):
     logger.info("Starting Weather Forecasting API...")
     try:
         # Initialize components
-        data_processor = DataProcessor()
+        data_processor = WeatherDataController()
         model_predictor = ModelPredictor()
         
         # Train model on startup if needed

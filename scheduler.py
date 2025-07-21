@@ -4,7 +4,7 @@ import logging
 import asyncio
 from datetime import datetime
 
-from data_processor import DataProcessor
+from weather_data_controller import WeatherDataController
 from model_predictor import ModelPredictor
 from config import Config
 
@@ -14,34 +14,118 @@ class WeatherScheduler:
     def __init__(self, model_predictor=None):
         self.config = Config()
         self.scheduler = AsyncIOScheduler()
-        self.data_processor = DataProcessor()
+        self.data_processor = WeatherDataController()
         self.model_predictor = model_predictor if model_predictor else ModelPredictor()
         self.is_running = False
+        self.is_initialized = False  # Track if we've done the initial full export
+    
+    def initialize_system(self):
+        """Initialize the system with full data export and model training"""
+        try:
+            logger.info("Initializing weather forecasting system...")
+            
+            # Check if we have preprocessed data
+            stats = self.data_processor.fetch_preprocessed_data_stats()
+            
+            if stats["preprocessed_records"] == 0:
+                # First time: do full data export and training
+                logger.info("No preprocessed data found. Performing initial setup...")
+                self.perform_initial_setup()
+            else:
+                logger.info(f"Found {stats['preprocessed_records']} existing preprocessed records")
+                # Load existing data and retrain if needed
+                self.load_and_retrain_model()
+            
+            self.is_initialized = True
+            logger.info("System initialization completed")
+            
+        except Exception as e:
+            logger.error(f"Error in system initialization: {e}")
+    
+    def perform_initial_setup(self, hours_back=168):
+        """Perform initial setup with full data export and model training"""
+        try:
+            logger.info(f"Performing initial setup with {hours_back} hours of data")
+            
+            # Process and save data (full export)
+            raw_df, processed_df = self.data_processor.process_and_store_new_data(
+                force_full_export=True, 
+                hours_back=hours_back
+            )
+            
+            if processed_df is None or processed_df.empty:
+                logger.error("No data available for initial setup")
+                return False
+            
+            # Train the model
+            success = self.model_predictor.train_model(processed_df)
+            
+            if success:
+                logger.info("Initial model training completed successfully")
+                return True
+            else:
+                logger.error("Initial model training failed")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error in initial setup: {e}")
+            return False
+    
+    def load_and_retrain_model(self, hours_back=168):
+        """Load existing preprocessed data and retrain model if needed"""
+        try:
+            logger.info("Loading existing preprocessed data for model training")
+            
+            # Get preprocessed data
+            training_df = self.data_processor.fetch_training_data(hours_back=hours_back)
+            
+            if training_df.empty:
+                logger.warning("No preprocessed data available for training")
+                return False
+            
+            # Check if model needs retraining
+            if self.model_predictor.needs_training():
+                logger.info("Model needs retraining. Starting training...")
+                success = self.model_predictor.train_model(training_df)
+                
+                if success:
+                    logger.info("Model retraining completed successfully")
+                    return True
+                else:
+                    logger.error("Model retraining failed")
+                    return False
+            else:
+                logger.info("Model is up to date, no retraining needed")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error in load_and_retrain_model: {e}")
+            return False
     
     def process_weather_data(self):
         """Main processing job that runs periodically"""
         try:
             logger.info(f"Starting weather data processing at {datetime.now()}")
             
-            # Export new data from database
-            df = self.data_processor.export_data()
+            # Initialize system if not done yet
+            if not self.is_initialized:
+                self.initialize_system()
             
-            if df.empty:
+            # Process and save new data
+            raw_df, processed_df = self.data_processor.process_and_store_new_data()
+            
+            if processed_df is None or processed_df.empty:
                 logger.info("No new data to process")
                 return
             
-            logger.info(f"Exported {len(df)} new records")
+            logger.info(f"Processed and saved {len(processed_df)} new records")
             
-            # Preprocess the data
-            processed_df = self.data_processor.preprocess_data(df)
+            # Check if we should retrain the model
+            if self.should_retrain_model():
+                logger.info("Triggering model retraining...")
+                self.load_and_retrain_model()
             
-            if processed_df.empty:
-                logger.warning("No data after preprocessing")
-                return
-            
-            logger.info(f"Preprocessed data shape: {processed_df.shape}")
-            
-            # Generate predictions
+            # Generate predictions using current model
             predictions_df = self.model_predictor.predict_future(processed_df, hours_ahead=24)
             
             if predictions_df.empty:
@@ -49,12 +133,36 @@ class WeatherScheduler:
                 return
             
             # Save predictions to database
-            self.data_processor.save_predictions(predictions_df)
+            self.data_processor.store_predictions(predictions_df)
             
             logger.info(f"Successfully processed {len(predictions_df)} predictions")
             
         except Exception as e:
             logger.error(f"Error in weather data processing: {e}")
+    
+    def should_retrain_model(self):
+        """Determine if the model should be retrained based on various factors"""
+        try:
+            # Get stats about preprocessed data
+            stats = self.data_processor.fetch_preprocessed_data_stats()
+            
+            # Retrain if:
+            # 1. Model explicitly needs training
+            if self.model_predictor.needs_training():
+                return True
+            
+            # 2. We have accumulated significant new data (e.g., more than 1000 new records)
+            # With 10-minute periods, 1000 records = ~7 days of data
+            if stats["preprocessed_records"] > 1000:
+                # Check if we have enough new data since last training
+                # For 10-minute periods, retrain every 24 hours of new data (144 records)
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error checking if model should retrain: {e}")
+            return False
     
     def run_once(self):
         self.process_weather_data()

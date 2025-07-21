@@ -8,8 +8,9 @@ import pandas as pd
 from datetime import datetime, timedelta
 import logging
 
-from data_processor import DataProcessor
+from weather_data_controller import WeatherDataController
 from model_predictor import ModelPredictor
+from scheduler import WeatherScheduler
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -35,8 +36,9 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Initialize components
 config = Config()
-data_processor = DataProcessor()
+data_processor = WeatherDataController()
 model_predictor = ModelPredictor()
+scheduler = WeatherScheduler(model_predictor)
 
 # Pydantic models for API
 class PredictionResponse(BaseModel):
@@ -52,7 +54,29 @@ class NextForecastResponse(BaseModel):
 class ActualTemperatureResponse(BaseModel):
     timestamp: datetime
     temperature: float
+    humidity: float
+    pressure: float
     module: str
+
+class PreprocessedDataResponse(BaseModel):
+    timestamp: datetime
+    temperature: float
+    humidity: float
+    pressure: float
+    temperature_normalized: float
+    humidity_normalized: float
+    pressure_normalized: float
+    hour: int
+    minute: int
+    day_of_week: int
+    month: int
+
+class SystemStatusResponse(BaseModel):
+    is_initialized: bool
+    is_running: bool
+    preprocessed_records: int
+    model_trained: bool
+    last_export_time: Optional[str]
 
 @app.get("/")
 async def root():
@@ -67,7 +91,15 @@ async def root():
             "sensor_data": "/sensor-data",
             "stats": "/stats",
             "stats_page": "/stats-page",
-            "temperature_graph": "/temperature-graph"
+            "temperature_graph": "/temperature-graph",
+            "preprocessed_data": "/preprocessed-data",
+            "preprocessed_stats": "/preprocessed-stats",
+            "system_status": "/system-status",
+            "initialize_system": "/initialize-system",
+            "retrain_model": "/retrain-model",
+            "process_data": "/process-data",
+            "clear_preprocessed_data": "/clear-preprocessed-data",
+            "scheduler_status": "/scheduler-status"
         }
     }
 
@@ -133,7 +165,7 @@ async def get_next_forecast():
 async def get_sensor_data(hours: int = 24, module_id: Optional[str] = None):
     """Get actual temperature data from source database"""
     try:
-        sensor_df = data_processor.get_latest_sensor_data(hours=hours, module_id=module_id)
+        sensor_df = data_processor.fetch_recent_sensor_data(hours=hours, module_id=module_id)
         
         if sensor_df.empty:
             return []
@@ -144,6 +176,8 @@ async def get_sensor_data(hours: int = 24, module_id: Optional[str] = None):
             temperatures.append(ActualTemperatureResponse(
                 timestamp=row['timestamp'],
                 temperature=float(row['temperature']),
+                humidity=float(row['humidity']),
+                pressure=float(row['pressure']),
                 module=str(row.get('module', 'unknown'))
             ))
         
@@ -177,8 +211,9 @@ async def get_available_modules():
 async def get_stats():
     """Get statistics from both databases"""
     try:
-        source_stats = data_processor.get_source_database_stats()
-        api_stats = data_processor.get_api_database_stats()
+        source_stats = data_processor.fetch_source_db_stats()
+        api_stats = data_processor.fetch_api_db_stats()
+        preprocessed_stats = data_processor.fetch_preprocessed_data_stats()
         
         return {
             "source_database": {
@@ -190,6 +225,13 @@ async def get_stats():
                 "total_predictions": api_stats.get("prediction_records", 0),
                 "latest_prediction": api_stats.get("latest_prediction"),
                 "status": "online" if api_stats.get("prediction_records", 0) > 0 else "offline"
+            },
+            "preprocessed_data": {
+                "total_records": preprocessed_stats.get("preprocessed_records", 0),
+                "latest_record": preprocessed_stats.get("latest_preprocessed"),
+                "earliest_record": preprocessed_stats.get("earliest_preprocessed"),
+                "batch_count": preprocessed_stats.get("batch_count", 0),
+                "status": "available" if preprocessed_stats.get("preprocessed_records", 0) > 0 else "empty"
             },
             "model_status": {
                 "is_trained": model_predictor.is_trained,
@@ -204,4 +246,160 @@ async def get_stats():
         
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
-        raise HTTPException(status_code=500, detail="Error retrieving statistics") 
+        raise HTTPException(status_code=500, detail="Error retrieving statistics")
+
+@app.get("/preprocessed-data", response_model=List[PreprocessedDataResponse])
+async def get_preprocessed_data(hours_back: Optional[int] = None, limit: Optional[int] = None):
+    """Get preprocessed data from database"""
+    try:
+        df = data_processor.fetch_preprocessed_data(hours_back=hours_back, limit=limit)
+        
+        if df.empty:
+            return []
+        
+        # Convert to response format
+        data = []
+        for index, row in df.iterrows():
+            data.append(PreprocessedDataResponse(
+                timestamp=index,
+                temperature=float(row.get('temperature', 0)),
+                humidity=float(row.get('humidity', 0)),
+                pressure=float(row.get('pressure', 0)),
+                temperature_normalized=float(row.get('temperature_normalized', 0)),
+                humidity_normalized=float(row.get('humidity_normalized', 0)),
+                pressure_normalized=float(row.get('pressure_normalized', 0)),
+                hour=int(row.get('hour', 0)),
+                minute=int(row.get('minute', 0)),
+                day_of_week=int(row.get('day_of_week', 0)),
+                month=int(row.get('month', 0))
+            ))
+        
+        return data
+        
+    except Exception as e:
+        logger.error(f"Error getting preprocessed data: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving preprocessed data")
+
+@app.get("/preprocessed-stats")
+async def get_preprocessed_stats():
+    """Get statistics about preprocessed data"""
+    try:
+        stats = data_processor.fetch_preprocessed_data_stats()
+        return stats
+        
+    except Exception as e:
+        logger.error(f"Error getting preprocessed stats: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving preprocessed statistics")
+
+@app.get("/system-status", response_model=SystemStatusResponse)
+async def get_system_status():
+    """Get system status including initialization and training status"""
+    try:
+        preprocessed_stats = data_processor.fetch_preprocessed_data_stats()
+        last_export_time = data_processor.preprocessor.get_last_export_time()
+        
+        return SystemStatusResponse(
+            is_initialized=scheduler.is_initialized,
+            is_running=scheduler.is_running,
+            preprocessed_records=preprocessed_stats.get("preprocessed_records", 0),
+            model_trained=model_predictor.is_trained,
+            last_export_time=last_export_time.isoformat() if last_export_time else None
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting system status: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving system status")
+
+@app.post("/initialize-system")
+async def initialize_system(hours_back: int = 168):
+    """Initialize the system with full data export and model training"""
+    try:
+        logger.info("Manual system initialization requested")
+        
+        if scheduler.is_initialized:
+            return {"message": "System already initialized", "status": "success"}
+        
+        # Perform initial setup
+        success = scheduler.perform_initial_setup(hours_back=hours_back)
+        
+        if success:
+            scheduler.is_initialized = True
+            return {"message": "System initialized successfully", "status": "success"}
+        else:
+            raise HTTPException(status_code=500, detail="System initialization failed")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in manual system initialization: {e}")
+        raise HTTPException(status_code=500, detail="Error during system initialization")
+
+@app.post("/retrain-model")
+async def retrain_model(hours_back: int = 168):
+    """Manually trigger model retraining"""
+    try:
+        logger.info("Manual model retraining requested")
+        
+        success = scheduler.load_and_retrain_model(hours_back=hours_back)
+        
+        if success:
+            return {"message": "Model retraining completed successfully", "status": "success"}
+        else:
+            raise HTTPException(status_code=500, detail="Model retraining failed")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in manual model retraining: {e}")
+        raise HTTPException(status_code=500, detail="Error during model retraining")
+
+@app.post("/process-data")
+async def process_data(force_full_export: bool = False, hours_back: int = 168):
+    """Manually trigger data processing"""
+    try:
+        logger.info("Manual data processing requested")
+        
+        raw_df, processed_df = data_processor.process_and_store_new_data(
+            force_full_export=force_full_export,
+            hours_back=hours_back
+        )
+        
+        if processed_df is not None and not processed_df.empty:
+            return {
+                "message": "Data processing completed successfully",
+                "raw_records": len(raw_df) if raw_df is not None else 0,
+                "processed_records": len(processed_df),
+                "status": "success"
+            }
+        else:
+            return {"message": "No data to process", "status": "success"}
+        
+    except Exception as e:
+        logger.error(f"Error in manual data processing: {e}")
+        raise HTTPException(status_code=500, detail="Error during data processing")
+
+@app.delete("/clear-preprocessed-data")
+async def clear_preprocessed_data(older_than_days: Optional[int] = None):
+    """Clear old preprocessed data to manage storage"""
+    try:
+        deleted_count = data_processor.purge_old_preprocessed_data(older_than_days=older_than_days)
+        
+        return {
+            "message": f"Cleared {deleted_count} preprocessed records",
+            "deleted_count": deleted_count,
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error clearing preprocessed data: {e}")
+        raise HTTPException(status_code=500, detail="Error clearing preprocessed data")
+
+@app.get("/scheduler-status")
+async def get_scheduler_status():
+    """Get scheduler status and next run information"""
+    try:
+        return scheduler.get_status()
+        
+    except Exception as e:
+        logger.error(f"Error getting scheduler status: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving scheduler status") 
