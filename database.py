@@ -69,10 +69,11 @@ class DatabaseManager:
         """Save predictions to API database using ORM"""
         try:
             session = self.Session()
-            preds = [Prediction(timestamp=index,
-                                predicted_temperature=row.get('predicted_temperature', 0),
-                                confidence=row.get('confidence', 0.8))
-                     for index, row in predictions_df.iterrows()]
+            preds = [Prediction(
+                timestamp=index.to_pydatetime() if hasattr(index, 'to_pydatetime') else index,
+                predicted_temperature=float(row.get('predicted_temperature', 0)),
+                confidence=float(row.get('confidence', 0.8))
+            ) for index, row in predictions_df.iterrows()]
             session.add_all(preds)
             session.commit()
             session.close()
@@ -176,23 +177,42 @@ class DatabaseManager:
         try:
             session = self.Session()
             query = session.query(PreprocessedData)
+            # Add debugging
+            total_count = session.query(PreprocessedData).count()
+            logger.debug(f"Total preprocessed records in database: {total_count}")
             if batch_id:
                 query = query.filter(PreprocessedData.batch_id == batch_id)
+                logger.debug(f"Filtering by batch_id: {batch_id}")
             elif hours_back:
                 cutoff_time = datetime.now() - timedelta(hours=hours_back)
                 query = query.filter(PreprocessedData.timestamp >= cutoff_time)
+                logger.debug(f"Filtering by hours_back: {hours_back}, cutoff_time: {cutoff_time}")
+            else:
+                logger.debug("No filters applied - returning all records")
             query = query.order_by(PreprocessedData.timestamp)
             if limit:
                 results = query.all()[-limit:]
+                logger.debug(f"Limited to last {limit} records")
             else:
                 results = query.all()
+                logger.debug(f"Retrieved {len(results)} records")
             session.close()
+            if not results and (hours_back or batch_id):
+                logger.warning("No results found with filters. Trying again without filters.")
+                session = self.Session()
+                query = session.query(PreprocessedData).order_by(PreprocessedData.timestamp)
+                results = query.all()
+                session.close()
+                logger.debug(f"Retrieved {len(results)} records without filters")
             if results:
                 df = pd.DataFrame([{c.name: getattr(r, c.name) for c in PreprocessedData.__table__.columns} for r in results])
                 if not df.empty:
                     df['timestamp'] = pd.to_datetime(df['timestamp'])
                     df = df.set_index('timestamp')
+                    logger.debug(f"Returning DataFrame with shape: {df.shape}")
                 return df[['temperature', 'humidity', 'pressure']] if not df.empty else df
+            else:
+                logger.debug("No results found in query (even without filters)")
             return pd.DataFrame()
         except Exception as e:
             logger.error(f"Error getting preprocessed data from API database: {e}")

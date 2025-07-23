@@ -16,7 +16,15 @@ class WeatherDataAnalyzer:
     def load_data(self, hours_back=None, limit=None):
         """Load preprocessed data for analysis"""
         print("Loading preprocessed data...")
+        print(f"Parameters: hours_back={hours_back}, limit={limit}")
+        
         df = self.controller.fetch_preprocessed_data(hours_back=hours_back, limit=limit)
+        
+        print(f"DataFrame returned: {df is not None}, empty: {df.empty if df is not None else 'N/A'}")
+        if df is not None and not df.empty:
+            print(f"DataFrame shape: {df.shape}")
+            print(f"Columns: {list(df.columns)}")
+            print(f"Index range: {df.index.min()} to {df.index.max()}")
         
         if df is None or df.empty:
             print("No preprocessed data found.")

@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from api import app
-from scheduler import start_scheduler, stop_scheduler
+from scheduler import start_scheduler, stop_scheduler, create_scheduler
 from config import Config
 from weather_data_controller import WeatherDataController
 from model_predictor import ModelPredictor
@@ -53,7 +53,7 @@ async def train_initial_model(model_predictor=None):
         logger.info(f"Training data shape: {processed_df.shape}")
         
         # Train the model
-        success = model_predictor.train_model(processed_df, epochs=50, learning_rate=0.001)
+        success = model_predictor.train_model(processed_df, epochs=100, learning_rate=0.001)
         
         if success:
             logger.info("Initial model training completed successfully")
@@ -76,6 +76,10 @@ async def lifespan(app):
         data_processor = WeatherDataController()
         model_predictor = ModelPredictor()
         
+        # Create scheduler first (this makes it globally available)
+        logger.info("Creating scheduler...")
+        create_scheduler(model_predictor)
+        
         # Train model on startup if needed
         if model_predictor.needs_training():
             await train_initial_model(model_predictor)
@@ -83,10 +87,17 @@ async def lifespan(app):
             logger.info("Model is already trained, skipping initial training")
         
         # Start scheduler with the trained model predictor
+        logger.info("Starting scheduler...")
         await start_scheduler(model_predictor)
+        
+        # Run initial prediction
         from scheduler import scheduler
-        scheduler.run_once()
-        logger.info("Scheduler started successfully")
+        if scheduler:
+            scheduler.run_once_prediction()
+            logger.info("Scheduler started successfully")
+        else:
+            logger.error("Failed to create scheduler")
+            
     except Exception as e:
         logger.error(f"Failed to start scheduler: {e}")
     

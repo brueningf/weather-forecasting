@@ -11,72 +11,63 @@ from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 
-class SimpleWeatherModel(nn.Module):
-    """Simple neural network for weather prediction"""
-    def __init__(self, input_size=10, hidden_size=64, output_size=1):
-        super(SimpleWeatherModel, self).__init__()
-        self.fc1 = nn.Linear(input_size, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, output_size)
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(0.2)
-    
+# --- NEW: LSTM Model ---
+class LSTMWeatherModel(nn.Module):
+    """LSTM-based neural network for weather prediction"""
+    def __init__(self, input_size=7, hidden_size=64, num_layers=2, output_size=1, dropout=0.2):
+        super(LSTMWeatherModel, self).__init__()
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers=num_layers, batch_first=True, dropout=dropout)
+        self.fc = nn.Linear(hidden_size, output_size)
+        self.dropout = nn.Dropout(dropout)
+
     def forward(self, x):
-        x = self.relu(self.fc1(x))
-        x = self.dropout(x)
-        x = self.relu(self.fc2(x))
-        x = self.dropout(x)
-        x = self.fc3(x)
-        return x
+        # x: (batch, seq_len, input_size)
+        out, _ = self.lstm(x)
+        out = self.dropout(out)
+        out = self.fc(out[:, -1, :])  # Take last time step
+        return out
 
 class ModelPredictor:
-    def __init__(self):
+    def __init__(self, sequence_length=12):
         self.config = Config()
         self.model = None
         self.scaler = StandardScaler()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.is_trained = False
+        self.sequence_length = sequence_length  # e.g., use last 12 steps (2 hours if 10min freq)
         self.load_model()
-    
+
     def load_model(self):
         """Load the trained model"""
         try:
             if self.config.MODEL_PATH and os.path.exists(self.config.MODEL_PATH):
-                # Add all necessary classes to safe globals for PyTorch 2.6+ compatibility
                 torch.serialization.add_safe_globals([
-                    SimpleWeatherModel,
+                    LSTMWeatherModel,
                     torch.nn.modules.linear.Linear,
-                    torch.nn.modules.activation.ReLU,
+                    torch.nn.modules.rnn.LSTM,
                     torch.nn.modules.dropout.Dropout
                 ])
-                
-                # Try loading with weights_only=False for backward compatibility
                 try:
                     checkpoint = torch.load(self.config.MODEL_PATH, map_location=self.device, weights_only=False)
                 except Exception as e:
                     logger.warning(f"Failed to load with weights_only=False: {e}")
-                    # Fallback to weights_only=True with proper safe globals
                     checkpoint = torch.load(self.config.MODEL_PATH, map_location=self.device, weights_only=True)
-                
                 self.model = checkpoint['model']
                 self.scaler = checkpoint['scaler']
                 self.is_trained = checkpoint.get('is_trained', True)
+                self.sequence_length = checkpoint.get('sequence_length', 12)
                 logger.info(f"Model loaded from {self.config.MODEL_PATH}")
             else:
-                # Create a default model if no trained model exists
-                self.model = SimpleWeatherModel()
+                self.model = LSTMWeatherModel()
                 self.is_trained = False
-                logger.info("Created default model (no trained model found)")
-            
+                logger.info("Created default LSTM model (no trained model found)")
             self.model.eval()
-            
         except Exception as e:
             logger.error(f"Error loading model: {e}")
-            # Create a default model as fallback
-            self.model = SimpleWeatherModel()
+            self.model = LSTMWeatherModel()
             self.is_trained = False
             self.model.eval()
-    
+
     def save_model(self):
         """Save the trained model"""
         try:
@@ -85,377 +76,250 @@ class ModelPredictor:
                     'model': self.model,
                     'scaler': self.scaler,
                     'is_trained': self.is_trained,
-                    'timestamp': datetime.now()
+                    'timestamp': datetime.now(),
+                    'sequence_length': self.sequence_length
                 }
                 torch.save(checkpoint, self.config.MODEL_PATH)
                 logger.info(f"Model saved to {self.config.MODEL_PATH}")
         except Exception as e:
             logger.error(f"Error saving model: {e}")
-    
+
     def prepare_training_data(self, df):
-        """Prepare training data from dataframe"""
-        if df.empty or len(df) < 10:
+        """Prepare training data for LSTM from dataframe"""
+        if df.empty or len(df) < self.sequence_length + 1:
             logger.warning("Insufficient data for training")
             return None, None
-        
         try:
-            # Create enhanced temporal features
             df_enhanced = df.copy()
-            
-            # Basic temporal features
             df_enhanced['hour'] = df_enhanced.index.hour
-            df_enhanced['minute'] = df_enhanced.index.minute
-            df_enhanced['day_of_week'] = df_enhanced.index.dayofweek
             df_enhanced['month'] = df_enhanced.index.month
-            
-            # Enhanced temporal features for better pattern recognition
-            # Sinusoidal encoding of hour (captures cyclical nature of day)
             df_enhanced['hour_sin'] = np.sin(2 * np.pi * df_enhanced['hour'] / 24)
             df_enhanced['hour_cos'] = np.cos(2 * np.pi * df_enhanced['hour'] / 24)
-            
-            # Sinusoidal encoding of minute (captures cyclical nature of hour)
-            df_enhanced['minute_sin'] = np.sin(2 * np.pi * df_enhanced['minute'] / 60)
-            df_enhanced['minute_cos'] = np.cos(2 * np.pi * df_enhanced['minute'] / 60)
-            
-            # Sinusoidal encoding of month (captures cyclical nature of year)
             df_enhanced['month_sin'] = np.sin(2 * np.pi * df_enhanced['month'] / 12)
             df_enhanced['month_cos'] = np.cos(2 * np.pi * df_enhanced['month'] / 12)
-            
-            # Day of week encoding
-            df_enhanced['day_sin'] = np.sin(2 * np.pi * df_enhanced['day_of_week'] / 7)
-            df_enhanced['day_cos'] = np.cos(2 * np.pi * df_enhanced['day_of_week'] / 7)
-            
-            # Time-based features
-            df_enhanced['is_night'] = ((df_enhanced['hour'] >= 22) | (df_enhanced['hour'] <= 6)).astype(int)
-            df_enhanced['is_day'] = ((df_enhanced['hour'] >= 6) & (df_enhanced['hour'] <= 18)).astype(int)
-            df_enhanced['is_peak_hours'] = ((df_enhanced['hour'] >= 12) & (df_enhanced['hour'] <= 16)).astype(int)
-            
-            # Select features for training (include weather variables)
             features = [
                 'temperature', 'humidity', 'pressure',
-                'temperature_normalized', 'humidity_normalized', 'pressure_normalized',
-                'hour_sin', 'hour_cos', 'minute_sin', 'minute_cos',
-                'month_sin', 'month_cos', 'day_sin', 'day_cos',
-                'is_night', 'is_day', 'is_peak_hours'
+                'hour_sin', 'hour_cos', 'month_sin', 'month_cos'
             ]
-            
             available_features = [f for f in features if f in df_enhanced.columns]
-            
-            if len(available_features) < 5:
+            if len(available_features) < 3:
                 logger.warning("Insufficient features for training")
                 return None, None
-            
-            # Create feature matrix
             X = df_enhanced[available_features].values
-            
-            # Handle missing values
             X = np.nan_to_num(X, nan=0.0)
-            
-            # Create target (next 10-minute period's temperature)
-            y = df_enhanced['temperature'].values[1:]  # Shift by 1 period
-            X = X[:-1]  # Remove last row since we don't have next temperature
-            
-            if len(X) < 10:
-                logger.warning("Insufficient data after creating targets")
-                return None, None
-            
+            y = df_enhanced['temperature'].values
             # Scale features
             X_scaled = self.scaler.fit_transform(X)
-            
-            return X_scaled, y
-            
+            # Create sequences
+            X_seq, y_seq = [], []
+            for i in range(len(X_scaled) - self.sequence_length):
+                X_seq.append(X_scaled[i:i+self.sequence_length])
+                y_seq.append(y[i+self.sequence_length])
+            X_seq = np.array(X_seq)
+            y_seq = np.array(y_seq)
+            if len(X_seq) < 10:
+                logger.warning("Insufficient data after creating sequences")
+                return None, None
+            return X_seq, y_seq
         except Exception as e:
             logger.error(f"Error preparing training data: {e}")
             return None, None
-    
+
     def train_model(self, df, epochs=100, batch_size=32, learning_rate=0.001):
-        """Train the model on the provided data"""
+        """Train the LSTM model on the provided data"""
         try:
-            # Prepare training data
             X, y = self.prepare_training_data(df)
             if X is None or y is None:
                 logger.error("Could not prepare training data")
                 return False
-            
-            # Split data
             X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-            
-            # Convert to tensors
             X_train_tensor = torch.FloatTensor(X_train).to(self.device)
             y_train_tensor = torch.FloatTensor(y_train).to(self.device)
             X_val_tensor = torch.FloatTensor(X_val).to(self.device)
             y_val_tensor = torch.FloatTensor(y_val).to(self.device)
-            
-            # Initialize model
-            input_size = X_train.shape[1]
-            self.model = SimpleWeatherModel(input_size=input_size).to(self.device)
-            
-            # Setup training
+            input_size = X_train.shape[2]
+            self.model = LSTMWeatherModel(input_size=input_size).to(self.device)
             criterion = nn.MSELoss()
             optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
-            
-            # Training loop
             best_val_loss = float('inf')
             patience = 10
             patience_counter = 0
-            
-            logger.info(f"Starting training with {len(X_train)} samples, {epochs} epochs")
-            
+            logger.info(f"Starting LSTM training with {len(X_train)} samples, {epochs} epochs")
             for epoch in range(epochs):
-                # Training
                 self.model.train()
-                optimizer.zero_grad()
-                outputs = self.model(X_train_tensor)
-                loss = criterion(outputs.squeeze(), y_train_tensor)
-                loss.backward()
-                optimizer.step()
-                
-                # Validation
+                permutation = torch.randperm(X_train_tensor.size(0))
+                for i in range(0, X_train_tensor.size(0), batch_size):
+                    indices = permutation[i:i+batch_size]
+                    batch_X, batch_y = X_train_tensor[indices], y_train_tensor[indices]
+                    optimizer.zero_grad()
+                    outputs = self.model(batch_X)
+                    loss = criterion(outputs.squeeze(), batch_y)
+                    loss.backward()
+                    optimizer.step()
                 self.model.eval()
                 with torch.no_grad():
                     val_outputs = self.model(X_val_tensor)
                     val_loss = criterion(val_outputs.squeeze(), y_val_tensor)
-                
-                # Early stopping
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     patience_counter = 0
                 else:
                     patience_counter += 1
-                
                 if patience_counter >= patience:
                     logger.info(f"Early stopping at epoch {epoch}")
                     break
-                
                 if epoch % 20 == 0:
                     logger.info(f"Epoch {epoch}: Train Loss: {loss.item():.4f}, Val Loss: {val_loss.item():.4f}")
-            
             self.is_trained = True
             self.save_model()
-            
             logger.info(f"Training completed. Final validation loss: {best_val_loss:.4f}")
             return True
-            
         except Exception as e:
             logger.error(f"Error training model: {e}")
             return False
-    
+
     def prepare_input_tensor(self, df):
-        """Prepare input tensor from dataframe"""
-        if df.empty:
+        """Prepare input tensor for LSTM from dataframe (last sequence_length rows)"""
+        if df.empty or len(df) < self.sequence_length:
             return None
-        
         try:
-            # Create enhanced temporal features (same as in prepare_training_data)
             df_enhanced = df.copy()
-            
-            # Basic temporal features
             df_enhanced['hour'] = df_enhanced.index.hour
-            df_enhanced['minute'] = df_enhanced.index.minute
-            df_enhanced['day_of_week'] = df_enhanced.index.dayofweek
             df_enhanced['month'] = df_enhanced.index.month
-            
-            # Enhanced temporal features for better pattern recognition
-            # Sinusoidal encoding of hour (captures cyclical nature of day)
             df_enhanced['hour_sin'] = np.sin(2 * np.pi * df_enhanced['hour'] / 24)
             df_enhanced['hour_cos'] = np.cos(2 * np.pi * df_enhanced['hour'] / 24)
-            
-            # Sinusoidal encoding of minute (captures cyclical nature of hour)
-            df_enhanced['minute_sin'] = np.sin(2 * np.pi * df_enhanced['minute'] / 60)
-            df_enhanced['minute_cos'] = np.cos(2 * np.pi * df_enhanced['minute'] / 60)
-            
-            # Sinusoidal encoding of month (captures cyclical nature of year)
             df_enhanced['month_sin'] = np.sin(2 * np.pi * df_enhanced['month'] / 12)
             df_enhanced['month_cos'] = np.cos(2 * np.pi * df_enhanced['month'] / 12)
-            
-            # Day of week encoding
-            df_enhanced['day_sin'] = np.sin(2 * np.pi * df_enhanced['day_of_week'] / 7)
-            df_enhanced['day_cos'] = np.cos(2 * np.pi * df_enhanced['day_of_week'] / 7)
-            
-            # Time-based features
-            df_enhanced['is_night'] = ((df_enhanced['hour'] >= 22) | (df_enhanced['hour'] <= 6)).astype(int)
-            df_enhanced['is_day'] = ((df_enhanced['hour'] >= 6) & (df_enhanced['hour'] <= 18)).astype(int)
-            df_enhanced['is_peak_hours'] = ((df_enhanced['hour'] >= 12) & (df_enhanced['hour'] <= 16)).astype(int)
-            
-            # Select features for prediction (same as training)
             features = [
                 'temperature', 'humidity', 'pressure',
-                'temperature_normalized', 'humidity_normalized', 'pressure_normalized',
-                'hour_sin', 'hour_cos', 'minute_sin', 'minute_cos',
-                'month_sin', 'month_cos', 'day_sin', 'day_cos',
-                'is_night', 'is_day', 'is_peak_hours'
+                'hour_sin', 'hour_cos', 'month_sin', 'month_cos'
             ]
-            
             available_features = [f for f in features if f in df_enhanced.columns]
-            
-            if not available_features:
+            if len(available_features) < 3:
                 logger.warning("No suitable features found for prediction")
                 return None
-            
-            # Create feature matrix
             X = df_enhanced[available_features].values
-            
-            # Handle missing values
             X = np.nan_to_num(X, nan=0.0)
-            
-            # Scale features using the fitted scaler
             if self.is_trained and hasattr(self.scaler, 'mean_'):
                 X_scaled = self.scaler.transform(X)
             else:
                 X_scaled = X
-            
-            # Convert to tensor
-            X_tensor = torch.FloatTensor(X_scaled).to(self.device)
-            
+            # Only last sequence_length rows
+            if len(X_scaled) < self.sequence_length:
+                return None
+            X_seq = X_scaled[-self.sequence_length:]
+            X_seq = np.expand_dims(X_seq, axis=0)  # (1, seq_len, input_size)
+            X_tensor = torch.FloatTensor(X_seq).to(self.device)
             return X_tensor
-            
         except Exception as e:
             logger.error(f"Error preparing input tensor: {e}")
             return None
-    
+
     def needs_training(self):
-        """Check if the model needs to be trained"""
-        # Check if model exists and has been properly loaded
         if self.model is None:
             return True
-        
-        # Check if model is trained
         if not self.is_trained:
             return True
-        
-        # Additional check: verify the model has been properly initialized with weights
         try:
-            # Check if model has parameters and they're not all zeros
             has_weights = False
             for param in self.model.parameters():
                 if param.data.abs().sum().item() > 0:
                     has_weights = True
                     break
-            
             if not has_weights:
                 logger.warning("Model exists but has no trained weights")
                 return True
-                
         except Exception as e:
             logger.warning(f"Error checking model weights: {e}")
             return True
-        
         return False
-    
-    def predict(self, df, forecast_periods=144):  # 144 periods = 24 hours (10-minute intervals)
-        """Make predictions on the data"""
-        if df.empty:
-            logger.warning("Empty dataframe provided for prediction")
+
+    def predict(self, df, forecast_periods=60):
+        """Make predictions on the data using LSTM"""
+        if df.empty or len(df) < self.sequence_length:
+            logger.warning("Insufficient data for prediction")
             return pd.DataFrame()
-        
         if self.needs_training():
             logger.warning("Model is not trained. Cannot make predictions.")
             return pd.DataFrame()
-        
         try:
-            # For forecasting, we need to create future timestamps with proper features
-            last_timestamp = df.index[-1] if not df.empty else datetime.now()
-            future_timestamps = pd.date_range(
-                start=last_timestamp + timedelta(minutes=10),
-                periods=forecast_periods,
-                freq='10T'  # 10-minute frequency
-            )
-            
-            # Create future data with proper temporal features
-            future_data = pd.DataFrame(index=future_timestamps)
-            future_data['hour'] = future_data.index.hour
-            future_data['minute'] = future_data.index.minute
-            future_data['day_of_week'] = future_data.index.dayofweek
-            future_data['month'] = future_data.index.month
-            
-            # Get the last known values as starting points
-            last_temp = df['temperature'].iloc[-1] if 'temperature' in df.columns else 20.0
-            last_humidity = df['humidity'].iloc[-1] if 'humidity' in df.columns else 50.0
-            last_pressure = df['pressure'].iloc[-1] if 'pressure' in df.columns else 1013.0
-            
-            # Create a more sophisticated initialization based on time patterns
-            temp_variations = []
-            humidity_variations = []
-            pressure_variations = []
-            
-            for i, timestamp in enumerate(future_timestamps):
-                # Base diurnal pattern: cooler at night (2-6 AM), warmer during day (12-4 PM)
-                hour_rad = 2 * np.pi * timestamp.hour / 24
-                diurnal_temp_variation = 3.0 * np.sin(hour_rad - np.pi/2)  # Peak at 2 PM, trough at 2 AM
-                
-                # Seasonal pattern: cooler in winter, warmer in summer
-                month_rad = 2 * np.pi * (timestamp.month - 1) / 12
-                seasonal_temp_variation = 5.0 * np.sin(month_rad - np.pi/2)  # Peak in July, trough in January
-                
-                # Gradual trend: slight cooling over the forecast period
-                temp_trend = -0.01 * i
-                
-                # Add small random component for realism
-                temp_noise = np.random.normal(0, 0.2)
-                
-                # Humidity variations (inverse relationship with temperature)
-                humidity_variation = -2.0 * diurnal_temp_variation + np.random.normal(0, 1.0)
-                
-                # Pressure variations (small random fluctuations)
-                pressure_variation = np.random.normal(0, 0.5)
-                
-                temp_variations.append(diurnal_temp_variation + seasonal_temp_variation + temp_trend + temp_noise)
-                humidity_variations.append(humidity_variation)
-                pressure_variations.append(pressure_variation)
-            
-            # Initialize future values with the patterns
-            future_data['temperature'] = last_temp + np.array(temp_variations)
-            future_data['humidity'] = np.clip(last_humidity + np.array(humidity_variations), 0, 100)
-            future_data['pressure'] = last_pressure + np.array(pressure_variations)
-            
-            # Prepare input tensor for the future data
-            X_tensor = self.prepare_input_tensor(future_data)
-            if X_tensor is None:
-                return pd.DataFrame()
-            
-            # Make predictions
-            with torch.no_grad():
-                predictions = self.model(X_tensor)
-                predictions = predictions.cpu().numpy().flatten()
-            
-            # Create predictions dataframe
-            if len(predictions) > 0:
+            # --- Timestamp frequency fix ---
+            freq = pd.infer_freq(df.index)
+            if freq is None:
+                # fallback: use median diff
+                diffs = df.index.to_series().diff().dropna()
+                if not diffs.empty:
+                    freq = diffs.median()
+                else:
+                    freq = pd.Timedelta(minutes=10)
+            last_timestamp = df.index[-1]
+            if isinstance(freq, str):
+                future_timestamps = pd.date_range(
+                    start=last_timestamp + pd.tseries.frequencies.to_offset(freq),
+                    periods=forecast_periods,
+                    freq=freq
+                )
+            else:
+                # freq is a Timedelta
+                future_timestamps = [last_timestamp + (i+1)*freq for i in range(forecast_periods)]
+            # --- End timestamp fix ---
+            # Prepare initial sequence
+            history = df.copy()
+            preds = []
+            for i in range(forecast_periods):
+                X_tensor = self.prepare_input_tensor(history)
+                if X_tensor is None:
+                    break
+                with torch.no_grad():
+                    pred = self.model(X_tensor)
+                    pred = pred.cpu().numpy().flatten()[0]
+                # --- Post-processing: clip output ---
+                pred = float(np.clip(pred, -50, 60))
+                preds.append(pred)
+                # Append prediction to history for next step
+                next_row = history.iloc[-1].copy()
+                next_row['temperature'] = pred
+                # Optionally, you could also update humidity/pressure with a model or keep last value
+                next_index = future_timestamps[i]
+                next_row.name = next_index
+                history = pd.concat([history, pd.DataFrame([next_row])])
+            if len(preds) > 0:
                 predictions_df = pd.DataFrame({
-                    'timestamp': future_timestamps,
-                    'predicted_temperature': predictions,
-                    'confidence': 0.8  # Default confidence
+                    'timestamp': future_timestamps[:len(preds)],
+                    'predicted_temperature': preds,
+                    'confidence': 0.8
                 })
-                
                 predictions_df.set_index('timestamp', inplace=True)
-                
-                logger.info(f"Generated {len(predictions_df)} predictions for future timestamps (10-minute intervals)")
+                logger.info(f"Generated {len(predictions_df)} predictions for future timestamps")
                 return predictions_df
-            
             return pd.DataFrame()
-            
         except Exception as e:
             logger.error(f"Error making predictions: {e}")
             return pd.DataFrame()
-    
+
     def predict_future(self, current_data, hours_ahead=24):
-        """Predict future weather based on current data"""
         try:
-            if current_data.empty:
+            if current_data.empty or len(current_data) < self.sequence_length:
                 logger.warning("No current data provided for future prediction")
                 return pd.DataFrame()
-            
             if self.needs_training():
                 logger.warning("Model is not trained. Cannot make predictions.")
                 return pd.DataFrame()
-            
-            # Convert hours to 10-minute periods
-            forecast_periods = hours_ahead * 6  # 6 periods per hour
-            
-            # Use the main predict method which now handles temporal predictions properly
+            # Use inferred frequency to determine periods
+            freq = pd.infer_freq(current_data.index)
+            if freq is None:
+                diffs = current_data.index.to_series().diff().dropna()
+                if not diffs.empty:
+                    freq = diffs.median()
+                else:
+                    freq = pd.Timedelta(minutes=10)
+            if isinstance(freq, str):
+                periods_per_hour = int(pd.Timedelta('1H') / pd.tseries.frequencies.to_offset(freq))
+            else:
+                periods_per_hour = int(pd.Timedelta('1H') / freq)
+            forecast_periods = hours_ahead * periods_per_hour
             predictions_df = self.predict(current_data, forecast_periods=forecast_periods)
-            
             return predictions_df
-            
         except Exception as e:
             logger.error(f"Error predicting future: {e}")
             return pd.DataFrame() 

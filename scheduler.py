@@ -1,8 +1,11 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 import logging
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
+import pandas as pd
+import os
 
 from weather_data_controller import WeatherDataController
 from model_predictor import ModelPredictor
@@ -10,14 +13,34 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
+SCHEDULER_STATUS_FILE = 'scheduler_status.flag'
+
 class WeatherScheduler:
     def __init__(self, model_predictor=None):
-        self.config = Config()
-        self.scheduler = AsyncIOScheduler()
-        self.data_processor = WeatherDataController()
-        self.model_predictor = model_predictor if model_predictor else ModelPredictor()
-        self.is_running = False
-        self.is_initialized = False  # Track if we've done the initial full export
+        try:
+            logger.info("Initializing WeatherScheduler...")
+            self.config = Config()
+            logger.debug("Config loaded successfully")
+            
+            self.scheduler = AsyncIOScheduler()
+            logger.debug("AsyncIOScheduler created successfully")
+            
+            self.data_processor = WeatherDataController()
+            logger.debug("WeatherDataController created successfully")
+            
+            self.model_predictor = model_predictor if model_predictor else ModelPredictor()
+            logger.debug("ModelPredictor created successfully")
+            
+            self.is_running = False
+            self.is_initialized = False  # Track if we've done the initial full export
+            
+            logger.info("WeatherScheduler initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Error initializing WeatherScheduler: {e}")
+            import traceback
+            logger.error(f"WeatherScheduler init traceback: {traceback.format_exc()}")
+            raise
     
     def initialize_system(self):
         """Initialize the system with full data export and model training"""
@@ -101,17 +124,13 @@ class WeatherScheduler:
         except Exception as e:
             logger.error(f"Error in load_and_retrain_model: {e}")
             return False
-    
-    def process_weather_data(self):
-        """Main processing job that runs periodically"""
+
+    def data_collection_job(self):
+        """Data collection job - processes and stores new weather data"""
         try:
-            logger.info(f"Starting weather data processing at {datetime.now()}")
+            logger.info(f"Starting data collection at {datetime.now()}")
             
-            # Initialize system if not done yet
-            if not self.is_initialized:
-                self.initialize_system()
-            
-            # Process and save new data
+            # Process and save new data only
             raw_df, processed_df = self.data_processor.process_and_store_new_data()
             
             if processed_df is None or processed_df.empty:
@@ -120,25 +139,112 @@ class WeatherScheduler:
             
             logger.info(f"Processed and saved {len(processed_df)} new records")
             
+        except Exception as e:
+            logger.error(f"Error in data collection: {e}")
+    
+    def prediction_job(self):
+        """Prediction job - autoregressively fills missing 1-min predictions for the next hour"""
+        try:
+            logger.info(f"Starting autoregressive prediction generation at {datetime.now()}")
+
+            if not self.is_initialized:
+                logger.info("System not initialized. Initializing now...")
+                self.initialize_system()
+                if not self.is_initialized:
+                    logger.warning("Initialization failed. Skipping prediction.")
+                    return
+
+            # 1. Get all existing predictions for the next hour
+            now = datetime.now().replace(second=0, microsecond=0)
+            future_times = [now + timedelta(minutes=i) for i in range(1, 61)]  # next 60 minutes
+            existing_preds_df = self.data_processor.db_manager.get_latest_predictions(hours=1)
+            existing_pred_times = set(pd.to_datetime(existing_preds_df['timestamp']).dt.floor('min')) if not existing_preds_df.empty else set()
+
+            # 2. Determine which timestamps are missing
+            missing_times = [t for t in future_times if t not in existing_pred_times]
+            if not missing_times:
+                logger.info("All predictions for the next hour already exist. Nothing to do.")
+                return
+
+            # 3. Get the latest real sensor data (use as starting point)
+            sensor_df = self.data_processor.fetch_recent_sensor_data(hours=1)
+            sequence_length = self.model_predictor.sequence_length
+            if sensor_df.empty:
+                logger.warning("No recent sensor data available for prediction. Using last available preprocessed datapoint.")
+                preprocessed_df = self.data_processor.fetch_preprocessed_data(limit=sequence_length)
+                if preprocessed_df is None or preprocessed_df.empty or len(preprocessed_df) < sequence_length:
+                    logger.error("No preprocessed data available for fallback prediction or not enough rows.")
+                    return
+                # Use the last sequence_length rows
+                history_df = preprocessed_df.tail(sequence_length).copy()
+            else:
+                sensor_df = sensor_df.sort_values('timestamp')
+                if len(sensor_df) < sequence_length:
+                    logger.warning(f"Not enough sensor data for prediction (have {len(sensor_df)}, need {sequence_length}). Trying preprocessed data fallback.")
+                    preprocessed_df = self.data_processor.fetch_preprocessed_data(limit=sequence_length)
+                    if preprocessed_df is None or preprocessed_df.empty or len(preprocessed_df) < sequence_length:
+                        logger.error("No preprocessed data available for fallback prediction or not enough rows.")
+                        return
+                    history_df = preprocessed_df.tail(sequence_length).copy()
+                else:
+                    history_df = sensor_df.tail(sequence_length).set_index('timestamp').copy()
+
+            # 4. Prepare to generate and save predictions one by one
+            for ts in missing_times:
+                # Ensure history_df has enough rows
+                if len(history_df) < sequence_length:
+                    logger.warning(f"Not enough history for prediction at {ts} (have {len(history_df)}, need {sequence_length})")
+                    break
+                input_df = history_df.copy()
+                input_df.index.name = 'timestamp'  # Ensure index is named for downstream code
+                pred_df = self.model_predictor.predict(input_df, forecast_periods=1)
+                if pred_df.empty:
+                    logger.warning(f"No prediction generated for {ts}")
+                    break
+                pred_temp = float(pred_df.iloc[0]['predicted_temperature'])
+                # Use last humidity/pressure (or optionally model them too)
+                last_row = history_df.iloc[-1]
+                pred_row = {
+                    'temperature': pred_temp,
+                    'humidity': last_row['humidity'],
+                    'pressure': last_row['pressure']
+                }
+                # Append new prediction to history_df, drop oldest to keep window size
+                new_row_df = pd.DataFrame([pred_row], index=[ts])
+                history_df = pd.concat([history_df, new_row_df])
+                history_df = history_df.tail(sequence_length)
+                # Save this prediction immediately
+                single_pred_df = pd.DataFrame([{
+                    'timestamp': ts,
+                    'predicted_temperature': pred_temp,
+                    'confidence': 0.8
+                }]).set_index('timestamp')
+                self.data_processor.store_predictions(single_pred_df)
+                logger.info(f"Generated and stored prediction for {ts}")
+
+        except Exception as e:
+            logger.error(f"Error in autoregressive prediction job: {e}")
+    
+    def training_job(self):
+        """Training job - only handles model retraining"""
+        try:
+            logger.info(f"Starting model training job at {datetime.now()}")
+            
             # Check if we should retrain the model
-            if self.should_retrain_model():
-                logger.info("Triggering model retraining...")
-                self.load_and_retrain_model()
-            
-            # Generate predictions using current model
-            predictions_df = self.model_predictor.predict_future(processed_df, hours_ahead=24)
-            
-            if predictions_df.empty:
-                logger.warning("No predictions generated")
+            if not self.should_retrain_model():
+                logger.info("Model retraining not needed at this time")
                 return
             
-            # Save predictions to database
-            self.data_processor.store_predictions(predictions_df)
+            logger.info("Model retraining required. Starting training...")
+            success = self.load_and_retrain_model()
             
-            logger.info(f"Successfully processed {len(predictions_df)} predictions")
+            if success:
+                logger.info("Model retraining completed successfully")
+            else:
+                logger.error("Model retraining failed")
             
         except Exception as e:
-            logger.error(f"Error in weather data processing: {e}")
+            logger.error(f"Error in training job: {e}")
     
     def should_retrain_model(self):
         """Determine if the model should be retrained based on various factors"""
@@ -164,22 +270,49 @@ class WeatherScheduler:
             logger.error(f"Error checking if model should retrain: {e}")
             return False
     
-    def run_once(self):
-        self.process_weather_data()
+    def run_once_prediction(self):
+        """Run prediction job once"""
+        self.prediction_job()
+        
+    def run_once_training(self):
+        """Run training job once"""
+        self.training_job()
+        
+    def run_once_data_collection(self):
+        """Run data collection job once"""
+        self.data_collection_job()
     
     def start(self):
-        """Start the scheduler"""
+        """Start the scheduler with separate jobs for different concerns"""
         if self.is_running:
             logger.warning("Scheduler is already running")
             return
         
         try:
-            # Add the job to run every N minutes
+            # Data collection job - frequent (every prediction interval)
             self.scheduler.add_job(
-                func=self.process_weather_data,
+                func=self.data_collection_job,
                 trigger=IntervalTrigger(minutes=self.config.PREDICTION_INTERVAL_MINUTES),
-                id='weather_processing',
-                name='Weather Data Processing',
+                id='data_collection',
+                name='Weather Data Collection',
+                replace_existing=True
+            )
+            
+            # Prediction job - frequent (every prediction interval, offset by 2 minutes after data collection)
+            self.scheduler.add_job(
+                func=self.prediction_job,
+                trigger=IntervalTrigger(minutes=1), # Run every minute
+                id='prediction_generation',
+                name='Weather Prediction Generation',
+                replace_existing=True
+            )
+            
+            # Training job - less frequent (daily at 2 AM)
+            self.scheduler.add_job(
+                func=self.training_job,
+                trigger=CronTrigger(hour=2, minute=0),  # Daily at 2 AM
+                id='model_training',
+                name='Model Training',
                 replace_existing=True
             )
             
@@ -187,7 +320,17 @@ class WeatherScheduler:
             self.scheduler.start()
             self.is_running = True
             
-            logger.info(f"Scheduler started. Processing every {self.config.PREDICTION_INTERVAL_MINUTES} minutes")
+            # Write status to file
+            try:
+                with open(SCHEDULER_STATUS_FILE, 'w') as f:
+                    f.write('running')
+            except Exception as e:
+                logger.error(f"Failed to write scheduler status file: {e}")
+
+            logger.info(f"Scheduler started with separate jobs:")
+            logger.info(f"- Data collection: every {self.config.PREDICTION_INTERVAL_MINUTES} minutes")
+            logger.info(f"- Predictions: every minute")
+            logger.info(f"- Training: daily at 2:00 AM")
             
         except Exception as e:
             logger.error(f"Error starting scheduler: {e}")
@@ -202,6 +345,14 @@ class WeatherScheduler:
         try:
             self.scheduler.shutdown()
             self.is_running = False
+            
+            # Write status to file
+            try:
+                with open(SCHEDULER_STATUS_FILE, 'w') as f:
+                    f.write('stopped')
+            except Exception as e:
+                logger.error(f"Failed to write scheduler status file: {e}")
+
             logger.info("Scheduler stopped")
             
         except Exception as e:
@@ -210,10 +361,36 @@ class WeatherScheduler:
     
     def get_status(self):
         """Get scheduler status"""
+        jobs_info = {}
+        for job in self.scheduler.get_jobs():
+            jobs_info[job.id] = {
+                'name': job.name,
+                'next_run': job.next_run_time.isoformat() if job.next_run_time else None
+            }
+        
+        # Add debugging information
+        logger.debug(f"Scheduler status - is_running: {self.is_running}, is_initialized: {self.is_initialized}")
+        logger.debug(f"APScheduler running: {self.scheduler.running}")
+        logger.debug(f"Number of jobs: {len(jobs_info)}")
+        
+        # Ensure we return the correct running status
+        actual_running = self.is_running or self.scheduler.running
+        
+        # Check file-based status as fallback
+        file_status = None
+        if os.path.exists(SCHEDULER_STATUS_FILE):
+            try:
+                with open(SCHEDULER_STATUS_FILE, 'r') as f:
+                    file_status = f.read().strip()
+            except Exception as e:
+                logger.error(f"Failed to read scheduler status file: {e}")
+        actual_running = self.is_running or self.scheduler.running or (file_status == 'running')
+        
         return {
-            "is_running": self.is_running,
-            "jobs": [job.id for job in self.scheduler.get_jobs()],
-            "next_run": self.scheduler.get_job('weather_processing').next_run_time.isoformat() if self.scheduler.get_job('weather_processing') else None
+            "is_running": actual_running,
+            "is_initialized": self.is_initialized,
+            "jobs": jobs_info,
+            "apscheduler_running": self.scheduler.running
         }
 
 # Global scheduler instance
@@ -222,15 +399,35 @@ scheduler = None
 def create_scheduler(model_predictor=None):
     """Create a new scheduler instance with optional model predictor"""
     global scheduler
-    scheduler = WeatherScheduler(model_predictor)
-    return scheduler
+    try:
+        logger.info("Creating new scheduler instance...")
+        scheduler = WeatherScheduler(model_predictor)
+        logger.info("Scheduler instance created successfully")
+        return scheduler
+    except Exception as e:
+        logger.error(f"Error creating scheduler instance: {e}")
+        import traceback
+        logger.error(f"create_scheduler traceback: {traceback.format_exc()}")
+        scheduler = None
+        raise
 
 async def start_scheduler(model_predictor=None):
     """Start the scheduler (for use in main.py)"""
     global scheduler
     if scheduler is None:
         scheduler = create_scheduler(model_predictor)
+    
+    # Initialize the system first
+    scheduler.initialize_system()
+    
+    # Start the scheduler
     scheduler.start()
+    
+    # Verify the scheduler is running
+    if scheduler.is_running:
+        logger.info("Scheduler started successfully")
+    else:
+        logger.error("Failed to start scheduler - is_running flag not set")
 
 async def stop_scheduler():
     """Stop the scheduler (for use in main.py)"""

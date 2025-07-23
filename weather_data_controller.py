@@ -113,4 +113,8 @@ class WeatherDataController:
 
     def fetch_training_data(self, hours_back=168):
         """Fetch preprocessed data for model training"""
-        return self.fetch_preprocessed_data(hours_back=hours_back) 
+        return self.fetch_preprocessed_data(hours_back=hours_back)
+
+    def get_latest_predictions(self, hours=24):
+        """Get latest predictions from API database"""
+        return self.db_manager.get_latest_predictions(hours=hours) 
