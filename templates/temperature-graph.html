@@ -2,6 +2,7 @@
 {% block title %}Temperature Comparison{% endblock %}
 {% block head %}
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.4.0"></script>
 {% endblock %}
 {% block content %}
     <div x-data="temperatureApp()">
@@ -160,41 +161,62 @@
                 },
                 updateChart() {
                     const ctx = document.getElementById('temperatureChart');
-                    // Destroy existing chart if it exists
                     if (this.chart) {
                         this.chart.destroy();
                         this.chart = null;
                     }
-                    // Wait a bit for the canvas to be ready
                     setTimeout(() => {
-                        // Prepare data for chart
-                        const actualLabels = this.actualData.map(item => 
-                            new Date(item.timestamp).toLocaleString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                            })
-                        );
-                        const actualTemps = this.actualData.map(item => item.temperature);
-                        const predictedLabels = this.predictedData.map(item => 
-                            new Date(item.timestamp).toLocaleString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                            })
-                        );
-                        const predictedTemps = this.predictedData.map(item => item.predicted_temperature);
+                        const now = new Date();
+                        // Sort data by timestamp ascending
+                        const sortedActualData = [...this.actualData].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                        const sortedPredictedData = [...this.predictedData].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                        // Split predictions into past and future
+                        const pastPredictions = sortedPredictedData.filter(item => new Date(item.timestamp) <= now);
+                        const futurePredictions = sortedPredictedData.filter(item => new Date(item.timestamp) > now);
+                        // Prepare labels
+                        const actualLabels = sortedActualData.map(item => new Date(item.timestamp).toLocaleString('en-US', {
+                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                        }));
+                        const pastPredictionLabels = pastPredictions.map(item => new Date(item.timestamp).toLocaleString('en-US', {
+                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                        }));
+                        const futurePredictionLabels = futurePredictions.map(item => new Date(item.timestamp).toLocaleString('en-US', {
+                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                        }));
+                        // Prepare data
+                        const actualTemps = sortedActualData.map(item => item.temperature);
+                        const pastPredictionTemps = pastPredictions.map(item => item.predicted_temperature);
+                        const futurePredictionTemps = futurePredictions.map(item => item.predicted_temperature);
+                        // Merge all labels for x-axis
+                        const allLabels = Array.from(new Set([
+                            ...actualLabels,
+                            ...pastPredictionLabels,
+                            ...futurePredictionLabels
+                        ]));
+                        // Find the index of 'now' for annotation
+                        let nowIndex = allLabels.findIndex(label => {
+                            const labelDate = new Date(label);
+                            return labelDate >= now;
+                        });
+                        if (nowIndex === -1) nowIndex = allLabels.length - 1;
+                        // Map data to allLabels (fill nulls for missing points)
+                        function mapToAllLabels(labels, data) {
+                            const map = {};
+                            labels.forEach((l, i) => { map[l] = data[i]; });
+                            return allLabels.map(l => map[l] !== undefined ? map[l] : null);
+                        }
+                        const actualTempsAll = mapToAllLabels(actualLabels, actualTemps);
+                        const pastPredictionTempsAll = mapToAllLabels(pastPredictionLabels, pastPredictionTemps);
+                        const futurePredictionTempsAll = mapToAllLabels(futurePredictionLabels, futurePredictionTemps);
                         // Create chart
                         this.chart = new Chart(ctx, {
                             type: 'line',
                             data: {
-                                labels: actualLabels.length > 0 ? actualLabels : predictedLabels,
+                                labels: allLabels,
                                 datasets: [
                                     {
                                         label: 'Sensor Data',
-                                        data: actualTemps,
+                                        data: actualTempsAll,
                                         borderColor: 'rgb(59, 130, 246)',
                                         backgroundColor: 'rgba(59, 130, 246, 0.1)',
                                         borderWidth: 2,
@@ -202,13 +224,24 @@
                                         tension: 0.1
                                     },
                                     {
-                                        label: 'Predicted Temperature',
-                                        data: predictedTemps,
+                                        label: 'Past Predictions',
+                                        data: pastPredictionTempsAll,
                                         borderColor: 'rgb(239, 68, 68)',
                                         backgroundColor: 'rgba(239, 68, 68, 0.1)',
                                         borderWidth: 2,
                                         fill: false,
-                                        tension: 0.1
+                                        tension: 0.1,
+                                        borderDash: []
+                                    },
+                                    {
+                                        label: 'Future Predictions',
+                                        data: futurePredictionTempsAll,
+                                        borderColor: 'rgb(239, 68, 68)',
+                                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                        borderWidth: 2,
+                                        fill: false,
+                                        tension: 0.1,
+                                        borderDash: [10, 5]
                                     }
                                 ]
                             },
@@ -219,26 +252,34 @@
                                     title: {
                                         display: true,
                                         text: `Temperature Comparison (Last ${this.hours} hours)`,
-                                        font: {
-                                            size: 16
-                                        }
+                                        font: { size: 16 }
                                     },
-                                    legend: {
-                                        display: false
+                                    legend: { display: false },
+                                    annotation: {
+                                        annotations: {
+                                            nowLine: {
+                                                type: 'line',
+                                                xMin: nowIndex,
+                                                xMax: nowIndex,
+                                                borderColor: 'black',
+                                                borderWidth: 2,
+                                                label: {
+                                                    content: 'Now',
+                                                    enabled: true,
+                                                    position: 'start',
+                                                    color: 'black',
+                                                    font: { weight: 'bold' }
+                                                }
+                                            }
+                                        }
                                     }
                                 },
                                 scales: {
                                     x: {
-                                        title: {
-                                            display: true,
-                                            text: 'Time'
-                                        }
+                                        title: { display: true, text: 'Time' }
                                     },
                                     y: {
-                                        title: {
-                                            display: true,
-                                            text: 'Temperature (°C)'
-                                        }
+                                        title: { display: true, text: 'Temperature (°C)' }
                                     }
                                 }
                             }

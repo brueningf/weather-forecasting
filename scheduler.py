@@ -60,6 +60,7 @@ class WeatherScheduler:
                 self.load_and_retrain_model()
             
             self.is_initialized = True
+            self.backfill_predictions()
             logger.info("System initialization completed")
             
         except Exception as e:
@@ -85,6 +86,7 @@ class WeatherScheduler:
             
             if success:
                 logger.info("Initial model training completed successfully")
+                self.backfill_predictions()
                 return True
             else:
                 logger.error("Initial model training failed")
@@ -143,9 +145,9 @@ class WeatherScheduler:
             logger.error(f"Error in data collection: {e}")
     
     def prediction_job(self):
-        """Prediction job - autoregressively fills missing 1-min predictions for the next hour"""
+        """Prediction job - fills missing 10-min predictions for the next hour"""
         try:
-            logger.info(f"Starting autoregressive prediction generation at {datetime.now()}")
+            logger.info(f"Starting 10-min interval prediction generation at {datetime.now()}")
 
             if not self.is_initialized:
                 logger.info("System not initialized. Initializing now...")
@@ -154,42 +156,31 @@ class WeatherScheduler:
                     logger.warning("Initialization failed. Skipping prediction.")
                     return
 
-            # 1. Get all existing predictions for the next hour
+            # 1. Get all existing predictions for the next hour (10-min intervals)
             now = datetime.now().replace(second=0, microsecond=0)
-            future_times = [now + timedelta(minutes=i) for i in range(1, 61)]  # next 60 minutes
+            # Align 'now' to the previous 10-min mark
+            minute = (now.minute // 10) * 10
+            now_aligned = now.replace(minute=minute)
+            future_times = [now_aligned + timedelta(minutes=10 * i) for i in range(1, 7)]  # next 60 minutes, 10-min steps
             existing_preds_df = self.data_processor.db_manager.get_latest_predictions(hours=1)
-            existing_pred_times = set(pd.to_datetime(existing_preds_df['timestamp']).dt.floor('min')) if not existing_preds_df.empty else set()
+            existing_pred_times = set(pd.to_datetime(existing_preds_df['timestamp']).dt.floor('10min')) if not existing_preds_df.empty else set()
 
             # 2. Determine which timestamps are missing
             missing_times = [t for t in future_times if t not in existing_pred_times]
             if not missing_times:
-                logger.info("All predictions for the next hour already exist. Nothing to do.")
+                logger.info("All 10-min predictions for the next hour already exist. Nothing to do.")
                 return
 
-            # 3. Get the latest real sensor data (use as starting point)
-            sensor_df = self.data_processor.fetch_recent_sensor_data(hours=1)
+            # 3. Get the latest preprocessed data (should be 10-min frequency)
             sequence_length = self.model_predictor.sequence_length
-            if sensor_df.empty:
-                logger.warning("No recent sensor data available for prediction. Using last available preprocessed datapoint.")
-                preprocessed_df = self.data_processor.fetch_preprocessed_data(limit=sequence_length)
-                if preprocessed_df is None or preprocessed_df.empty or len(preprocessed_df) < sequence_length:
-                    logger.error("No preprocessed data available for fallback prediction or not enough rows.")
-                    return
-                # Use the last sequence_length rows
-                history_df = preprocessed_df.tail(sequence_length).copy()
-            else:
-                sensor_df = sensor_df.sort_values('timestamp')
-                if len(sensor_df) < sequence_length:
-                    logger.warning(f"Not enough sensor data for prediction (have {len(sensor_df)}, need {sequence_length}). Trying preprocessed data fallback.")
-                    preprocessed_df = self.data_processor.fetch_preprocessed_data(limit=sequence_length)
-                    if preprocessed_df is None or preprocessed_df.empty or len(preprocessed_df) < sequence_length:
-                        logger.error("No preprocessed data available for fallback prediction or not enough rows.")
-                        return
-                    history_df = preprocessed_df.tail(sequence_length).copy()
-                else:
-                    history_df = sensor_df.tail(sequence_length).set_index('timestamp').copy()
+            preprocessed_df = self.data_processor.fetch_preprocessed_data(limit=sequence_length)
+            if preprocessed_df is None or preprocessed_df.empty or len(preprocessed_df) < sequence_length:
+                logger.error("No preprocessed data available or not enough rows for prediction.")
+                return
+            preprocessed_df = preprocessed_df.sort_index()
+            history_df = preprocessed_df.tail(sequence_length).copy()
 
-            # 4. Prepare to generate and save predictions one by one
+            # 4. Generate and save predictions for each missing 10-min timestamp
             for ts in missing_times:
                 # Ensure history_df has enough rows
                 if len(history_df) < sequence_length:
@@ -197,6 +188,7 @@ class WeatherScheduler:
                     break
                 input_df = history_df.copy()
                 input_df.index.name = 'timestamp'  # Ensure index is named for downstream code
+                # Predict for 1 period, but force the model to use 10-min freq
                 pred_df = self.model_predictor.predict(input_df, forecast_periods=1)
                 if pred_df.empty:
                     logger.warning(f"No prediction generated for {ts}")
@@ -220,10 +212,11 @@ class WeatherScheduler:
                     'confidence': 0.8
                 }]).set_index('timestamp')
                 self.data_processor.store_predictions(single_pred_df)
-                logger.info(f"Generated and stored prediction for {ts}")
+                logger.info(f"Generated and stored 10-min prediction for {ts}")
+            self.backfill_predictions()
 
         except Exception as e:
-            logger.error(f"Error in autoregressive prediction job: {e}")
+            logger.error(f"Error in 10-min prediction job: {e}")
     
     def training_job(self):
         """Training job - only handles model retraining"""
@@ -301,7 +294,7 @@ class WeatherScheduler:
             # Prediction job - frequent (every prediction interval, offset by 2 minutes after data collection)
             self.scheduler.add_job(
                 func=self.prediction_job,
-                trigger=IntervalTrigger(minutes=1), # Run every minute
+                trigger=IntervalTrigger(minutes=self.config.PREDICTION_INTERVAL_MINUTES), # Run every 10 minutes
                 id='prediction_generation',
                 name='Weather Prediction Generation',
                 replace_existing=True
@@ -329,7 +322,7 @@ class WeatherScheduler:
 
             logger.info(f"Scheduler started with separate jobs:")
             logger.info(f"- Data collection: every {self.config.PREDICTION_INTERVAL_MINUTES} minutes")
-            logger.info(f"- Predictions: every minute")
+            logger.info(f"- Predictions: every {self.config.PREDICTION_INTERVAL_MINUTES} minutes")
             logger.info(f"- Training: daily at 2:00 AM")
             
         except Exception as e:
@@ -392,6 +385,71 @@ class WeatherScheduler:
             "jobs": jobs_info,
             "apscheduler_running": self.scheduler.running
         }
+
+    def backfill_predictions(self):
+        """Backfill missing predictions from the end of preprocessed data up to 1 hour into the future."""
+        try:
+            logger.info("Starting backfill of missing predictions...")
+            # 1. Get all preprocessed data (actuals)
+            preprocessed_df = self.data_processor.fetch_preprocessed_data()
+            if preprocessed_df is None or preprocessed_df.empty:
+                logger.warning("No preprocessed data available for backfilling predictions.")
+                return
+            preprocessed_df = preprocessed_df.sort_index()
+            # 2. Get all predictions
+            all_predictions_df = self.data_processor.db_manager.get_latest_predictions(hours=10000)  # large window
+            existing_pred_times = set(pd.to_datetime(all_predictions_df['timestamp']).dt.floor('10min')) if not all_predictions_df.empty else set()
+            # 3. Determine the range to fill
+            last_actual_time = preprocessed_df.index[-1]
+            now = datetime.now().replace(second=0, microsecond=0)
+            minute = (now.minute // 10) * 10
+            now_aligned = now.replace(minute=minute)
+            end_time = now_aligned + timedelta(hours=1)
+            # 4. Build all 10-min timestamps from the earliest possible (after enough history) to end_time
+            sequence_length = self.model_predictor.sequence_length
+            all_times = pd.date_range(
+                start=preprocessed_df.index[sequence_length],
+                end=end_time,
+                freq='10min'
+            )
+            # 5. For each timestamp, if missing prediction, generate and store
+            history_df = preprocessed_df.copy()
+            for ts in all_times:
+                if ts in existing_pred_times:
+                    continue
+                # Only predict if we have enough history
+                history_window = history_df[history_df.index < ts].tail(sequence_length)
+                if len(history_window) < sequence_length:
+                    logger.debug(f"Not enough history for prediction at {ts}")
+                    continue
+                input_df = history_window.copy()
+                input_df.index.name = 'timestamp'
+                pred_df = self.model_predictor.predict(input_df, forecast_periods=1)
+                if pred_df.empty:
+                    logger.warning(f"No prediction generated for {ts}")
+                    continue
+                pred_temp = float(pred_df.iloc[0]['predicted_temperature'])
+                last_row = history_window.iloc[-1]
+                pred_row = {
+                    'temperature': pred_temp,
+                    'humidity': last_row['humidity'],
+                    'pressure': last_row['pressure']
+                }
+                # Append new prediction to history_df for future steps
+                new_row_df = pd.DataFrame([pred_row], index=[ts])
+                history_df = pd.concat([history_df, new_row_df])
+                history_df = history_df.sort_index()
+                # Save this prediction
+                single_pred_df = pd.DataFrame([{
+                    'timestamp': ts,
+                    'predicted_temperature': pred_temp,
+                    'confidence': 0.8
+                }]).set_index('timestamp')
+                self.data_processor.store_predictions(single_pred_df)
+                logger.info(f"Backfilled prediction for {ts}")
+            logger.info("Backfill of missing predictions complete.")
+        except Exception as e:
+            logger.error(f"Error in backfill_predictions: {e}")
 
 # Global scheduler instance
 scheduler = None

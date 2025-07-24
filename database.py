@@ -52,6 +52,12 @@ class DatabaseManager:
     def export_data_since(self, last_export_time):
         """Export data from source database since the specified time"""
         try:
+            # Ensure last_export_time is a naive UTC datetime
+            if isinstance(last_export_time, pd.Timestamp):
+                if last_export_time.tzinfo is not None:
+                    last_export_time = last_export_time.tz_convert('UTC').tz_localize(None)
+                else:
+                    last_export_time = last_export_time.to_pydatetime()
             query = f"""
                 SELECT timestamp, temperature, humidity, pressure, module 
                 FROM {self.sensor_data_table} 
