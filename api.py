@@ -5,6 +5,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, Response, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from fastapi import Request
 from pydantic import BaseModel
 from typing import List, Optional
 import pandas as pd
@@ -44,9 +46,12 @@ app.add_middleware(
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# Mount templates
+templates = Jinja2Templates(directory="templates")
+
 # Initialize components
 config = Config()
-data_processor = WeatherDataController()
+weather_data_controller = WeatherDataController()
 model_predictor = ModelPredictor()
 # Use the global scheduler instance from scheduler module
 from scheduler import scheduler, create_scheduler
@@ -95,293 +100,19 @@ class SystemStatusResponse(BaseModel):
     last_export_time: Optional[str]
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard():
+async def dashboard(request: Request):
     """Main dashboard with all features and analysis"""
-    html_content = """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Weather Forecasting Dashboard</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-        <style>
-            .gradient-bg {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            }
-            .card-hover {
-                transition: transform 0.2s ease-in-out;
-            }
-            .card-hover:hover {
-                transform: translateY(-2px);
-            }
-        </style>
-    </head>
-    <body class="bg-gray-50">
-        <!-- Header -->
-        <header class="gradient-bg text-white shadow-lg">
-            <div class="container mx-auto px-6 py-4">
-                <h1 class="text-3xl font-bold">🌤️ Weather Forecasting Dashboard</h1>
-                <p class="text-blue-100 mt-2">Real-time weather predictions and analysis</p>
-            </div>
-        </header>
+    return templates.TemplateResponse("dashboard.html", {"request": request})
 
-        <!-- Main Content -->
-        <div class="container mx-auto px-6 py-8">
-            <!-- System Status -->
-            <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-                <h2 class="text-2xl font-semibold text-gray-800 mb-4">System Status</h2>
-                <div id="system-status" class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div class="bg-blue-50 p-4 rounded-lg">
-                        <div class="text-blue-600 font-semibold">Model Status</div>
-                        <div id="model-status" class="text-lg">Loading...</div>
-                    </div>
-                    <div class="bg-green-50 p-4 rounded-lg">
-                        <div class="text-green-600 font-semibold">Scheduler</div>
-                        <div id="scheduler-status" class="text-lg">Loading...</div>
-                    </div>
-                    <div class="bg-purple-50 p-4 rounded-lg">
-                        <div class="text-purple-600 font-semibold">Data Records</div>
-                        <div id="data-records" class="text-lg">Loading...</div>
-                    </div>
-                    <div class="bg-orange-50 p-4 rounded-lg">
-                        <div class="text-orange-600 font-semibold">Last Update</div>
-                        <div id="last-update" class="text-lg">Loading...</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Quick Actions -->
-            <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-                <h2 class="text-2xl font-semibold text-gray-800 mb-4">Quick Actions</h2>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <button onclick="initializeSystem()" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg card-hover">
-                        🔄 Initialize System
-                    </button>
-                    <button onclick="retrainModel()" class="bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-6 rounded-lg card-hover">
-                        🧠 Retrain Model
-                    </button>
-                    <button onclick="processData()" class="bg-purple-500 hover:bg-purple-600 text-white font-semibold py-3 px-6 rounded-lg card-hover">
-                        📊 Process Data
-                    </button>
-                </div>
-            </div>
-
-            <!-- Analysis Visualizations -->
-            <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-2xl font-semibold text-gray-800">Data Analysis</h2>
-                    <button onclick="refreshAnalysis()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg card-hover">
-                        🔄 Refresh Analysis
-                    </button>
-                </div>
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div>
-                        <h3 class="text-lg font-semibold text-gray-700 mb-3">Time Series Analysis</h3>
-                        <img id="time-series-plot" src="/api/analysis/time-series" alt="Time Series Analysis" class="w-full rounded-lg shadow-sm">
-                    </div>
-                    <div>
-                        <h3 class="text-lg font-semibold text-gray-700 mb-3">Data Distributions</h3>
-                        <img id="distribution-plot" src="/api/analysis/distributions" alt="Data Distributions" class="w-full rounded-lg shadow-sm">
-                    </div>
-                    <div>
-                        <h3 class="text-lg font-semibold text-gray-700 mb-3">Correlation Matrix</h3>
-                        <img id="correlation-plot" src="/api/analysis/correlation" alt="Correlation Matrix" class="w-full rounded-lg shadow-sm">
-                    </div>
-                    <div>
-                        <h3 class="text-lg font-semibold text-gray-700 mb-3">Temporal Patterns</h3>
-                        <img id="temporal-plot" src="/api/analysis/temporal" alt="Temporal Patterns" class="w-full rounded-lg shadow-sm">
-                    </div>
-                </div>
-            </div>
-
-            <!-- API Endpoints -->
-            <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-                <h2 class="text-2xl font-semibold text-gray-800 mb-4">Available API Endpoints</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <h3 class="text-lg font-semibold text-gray-700 mb-3">Data & Predictions</h3>
-                        <ul class="space-y-2 text-sm">
-                            <li><a href="/api/predictions" class="text-blue-600 hover:underline">📈 /api/predictions</a> - Get weather predictions</li>
-                            <li><a href="/api/next-forecast" class="text-blue-600 hover:underline">🔮 /api/next-forecast</a> - Next forecast</li>
-                            <li><a href="/api/sensor-data" class="text-blue-600 hover:underline">🌡️ /api/sensor-data</a> - Raw sensor data</li>
-                            <li><a href="/api/preprocessed-data" class="text-blue-600 hover:underline">⚙️ /api/preprocessed-data</a> - Processed data</li>
-                        </ul>
-                    </div>
-                    <div>
-                        <h3 class="text-lg font-semibold text-gray-700 mb-3">System &amp; Analysis</h3>
-                        <ul class="space-y-2 text-sm">
-                            <li><a href="/api/system-status" class="text-blue-600 hover:underline">📊 /api/system-status</a> - System status</li>
-                            <li><a href="/api/stats" class="text-blue-600 hover:underline">📋 /api/stats</a> - Statistics</li>
-                            <li><a href="/api/scheduler-status" class="text-blue-600 hover:underline">⏰ /api/scheduler-status</a> - Scheduler status</li>
-                            <li><a href="/api/test-scheduler" class="text-blue-600 hover:underline">🧪 /api/test-scheduler</a> - Test scheduler</li>
-                            <li><a href="/api/test-database" class="text-blue-600 hover:underline">🗄️ /api/test-database</a> - Test database</li>
-                            <li><a href="/api/modules" class="text-blue-600 hover:underline">🔧 /api/modules</a> - Available modules</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Live Data -->
-            <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-                <h2 class="text-2xl font-semibold text-gray-800 mb-4">Live Weather Data</h2>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="bg-red-50 p-4 rounded-lg">
-                        <div class="text-red-600 font-semibold">Temperature</div>
-                        <div id="current-temp" class="text-2xl font-bold">--°C</div>
-                    </div>
-                    <div class="bg-blue-50 p-4 rounded-lg">
-                        <div class="text-blue-600 font-semibold">Humidity</div>
-                        <div id="current-humidity" class="text-2xl font-bold">--%</div>
-                    </div>
-                    <div class="bg-green-50 p-4 rounded-lg">
-                        <div class="text-green-600 font-semibold">Pressure</div>
-                        <div id="current-pressure" class="text-2xl font-bold">-- hPa</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <script>
-            // Load system status
-            async function loadSystemStatus() {
-                try {
-                    const response = await fetch('/api/system-status');
-                    const status = await response.json();
-                    
-                    document.getElementById('model-status').textContent = status.model_trained ? '✅ Trained' : '❌ Needs Training';
-                    document.getElementById('scheduler-status').textContent = status.is_running ? '✅ Running' : '❌ Stopped';
-                    document.getElementById('data-records').textContent = status.preprocessed_records + ' records';
-                    document.getElementById('last-update').textContent = status.last_export_time || 'Never';
-                } catch (error) {
-                    console.error('Error loading system status:', error);
-                }
-            }
-
-            // Load live data
-            async function loadLiveData() {
-                try {
-                    const response = await fetch('/api/sensor-data?hours=1&limit=1');
-                    const data = await response.json();
-                    
-                    if (data.length > 0) {
-                        const latest = data[0];
-                        document.getElementById('current-temp').textContent = latest.temperature.toFixed(1) + '°C';
-                        document.getElementById('current-humidity').textContent = latest.humidity.toFixed(1) + '%';
-                        document.getElementById('current-pressure').textContent = latest.pressure.toFixed(1) + ' hPa';
-                    }
-                } catch (error) {
-                    console.error('Error loading live data:', error);
-                }
-            }
-
-            // Quick action functions
-            async function initializeSystem() {
-                try {
-                    const response = await fetch('/api/initialize-system', { method: 'POST' });
-                    const result = await response.json();
-                    
-                    if (response.ok) {
-                        alert('System initialization: ' + (result.status === 'success' ? 'Success' : result.message));
-                    } else {
-                        alert('System initialization failed: ' + (result.detail || 'Unknown error'));
-                    }
-                    loadSystemStatus();
-                } catch (error) {
-                    alert('Error initializing system: ' + error.message);
-                }
-            }
-
-            async function retrainModel() {
-                try {
-                    const response = await fetch('/api/retrain-model', { method: 'POST' });
-                    const result = await response.json();
-                    
-                    if (response.ok) {
-                        alert('Model retraining: ' + (result.status === 'success' ? 'Success' : result.message));
-                    } else {
-                        alert('Model retraining failed: ' + (result.detail || 'Unknown error'));
-                    }
-                    loadSystemStatus();
-                } catch (error) {
-                    alert('Error retraining model: ' + error.message);
-                }
-            }
-
-            async function processData() {
-                try {
-                    const response = await fetch('/api/process-data', { method: 'POST' });
-                    const result = await response.json();
-                    
-                    if (response.ok) {
-                        alert('Data processing: ' + (result.status === 'success' ? 'Success' : result.message));
-                    } else {
-                        alert('Data processing failed: ' + (result.detail || 'Unknown error'));
-                    }
-                    loadSystemStatus();
-                } catch (error) {
-                    alert('Error processing data: ' + error.message);
-                }
-            }
-
-            // Refresh analysis plots
-            async function refreshAnalysis() {
-                try {
-                    // Add timestamp to prevent caching
-                    const timestamp = new Date().getTime();
-                    const plots = ['time-series-plot', 'distribution-plot', 'correlation-plot', 'temporal-plot'];
-                    
-                    plots.forEach(plotId => {
-                        const img = document.getElementById(plotId);
-                        if (img) {
-                            img.src = img.src.split('?')[0] + '?t=' + timestamp;
-                        }
-                    });
-                    
-                    // Show a brief success message
-                    const button = event.target;
-                    const originalText = button.innerHTML;
-                    button.innerHTML = '✅ Refreshed!';
-                    button.disabled = true;
-                    
-                    setTimeout(() => {
-                        button.innerHTML = originalText;
-                        button.disabled = false;
-                    }, 2000);
-                    
-                } catch (error) {
-                    console.error('Error refreshing analysis:', error);
-                    alert('Error refreshing analysis plots');
-                }
-            }
-
-            // Initialize dashboard
-            document.addEventListener('DOMContentLoaded', function() {
-                loadSystemStatus();
-                loadLiveData();
-                
-                // Refresh data every 30 seconds
-                setInterval(() => {
-                    loadSystemStatus();
-                    loadLiveData();
-                }, 30000);
-            });
-        </script>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
-
-@app.get("/stats-page")
-async def stats_page():
+@app.get("/stats-page", response_class=HTMLResponse)
+async def stats_page(request: Request):
     """Serve the stats HTML page"""
-    return FileResponse("static/stats.html")
+    return templates.TemplateResponse("stats.html", {"request": request})
 
-@app.get("/temperature-graph")
-async def temperature_graph_page():
+@app.get("/temperature-graph", response_class=HTMLResponse)
+async def temperature_graph_page(request: Request):
     """Serve the temperature comparison graph HTML page"""
-    return FileResponse("static/temperature-graph.html")
+    return templates.TemplateResponse("temperature-graph.html", {"request": request})
 
 @app.get("/sensor-data")
 async def redirect_sensor_data(hours: int = 24, module_id: Optional[str] = None):
@@ -411,16 +142,16 @@ async def get_predictions(hours: int = 24):
     """Get weather predictions for the specified number of hours"""
     try:
         # Use the correct method to get predictions from database
-        predictions_df = data_processor.get_latest_predictions(hours=hours)
+        predictions_df = weather_data_controller.get_latest_predictions(hours=hours)
         
         if predictions_df.empty:
             return []
         
         # Convert to response format
         data = []
-        for index, row in predictions_df.iterrows():
+        for _, row in predictions_df.iterrows():
             data.append(PredictionResponse(
-                timestamp=index,
+                timestamp=row['timestamp'],
                 predicted_temperature=float(row.get('predicted_temperature', 0)),
                 confidence=float(row.get('confidence', 0))
             ))
@@ -436,7 +167,7 @@ async def get_next_forecast():
     """Get the next weather forecast"""
     try:
         # Get the latest prediction from database
-        predictions_df = data_processor.get_latest_predictions(hours=24)
+        predictions_df = weather_data_controller.get_latest_predictions(hours=24)
         
         if predictions_df.empty:
             raise HTTPException(status_code=404, detail="No forecast available")
@@ -445,7 +176,7 @@ async def get_next_forecast():
         latest_prediction = predictions_df.iloc[-1]
         
         return NextForecastResponse(
-            timestamp=latest_prediction.name,  # Use index as timestamp
+            timestamp=latest_prediction['timestamp'],
             predicted_temperature=float(latest_prediction.get('predicted_temperature', 0)),
             confidence=float(latest_prediction.get('confidence', 0))
         )
@@ -461,16 +192,16 @@ async def get_sensor_data(hours: int = 24, module_id: Optional[str] = None):
     """Get actual sensor data for the specified number of hours"""
     try:
         # Get raw sensor data using the correct method name
-        raw_data = data_processor.fetch_recent_sensor_data(hours=hours, module_id=module_id)
+        raw_data = weather_data_controller.fetch_recent_sensor_data(hours=hours, module_id=module_id)
         
         if raw_data.empty:
             return []
         
         # Convert to response format
         data = []
-        for index, row in raw_data.iterrows():
+        for _, row in raw_data.iterrows():
             data.append(ActualTemperatureResponse(
-                timestamp=index,
+                timestamp=row['timestamp'],
                 temperature=float(row.get('temperature', 0)),
                 humidity=float(row.get('humidity', 0)),
                 pressure=float(row.get('pressure', 0)),
@@ -490,12 +221,12 @@ async def get_available_modules():
         # Query the database directly to get available modules
         query = f"""
             SELECT DISTINCT module 
-            FROM {data_processor.db_manager.sensor_data_table}
+            FROM {weather_data_controller.db_manager.sensor_data_table}
             WHERE module IS NOT NULL
             ORDER BY module
         """
         
-        df = pd.read_sql(query, data_processor.db_manager.source_engine)
+        df = pd.read_sql(query, weather_data_controller.db_manager.source_engine)
         modules = df['module'].tolist() if not df.empty else []
         
         return {"modules": modules}
@@ -509,9 +240,9 @@ async def get_stats():
     """Get comprehensive statistics about the system"""
     try:
         # Get various statistics using the correct method names
-        raw_stats = data_processor.fetch_source_db_stats()
-        preprocessed_stats = data_processor.fetch_preprocessed_data_stats()
-        api_stats = data_processor.fetch_api_db_stats()
+        raw_stats = weather_data_controller.fetch_source_db_stats()
+        preprocessed_stats = weather_data_controller.fetch_preprocessed_data_stats()
+        api_stats = weather_data_controller.fetch_api_db_stats()
         
         # Get model info
         model_info = {
@@ -548,7 +279,7 @@ async def get_stats():
 async def get_preprocessed_data(hours_back: Optional[int] = None, limit: Optional[int] = None):
     """Get preprocessed data for analysis"""
     try:
-        df = data_processor.fetch_preprocessed_data(hours_back=hours_back, limit=limit)
+        df = weather_data_controller.fetch_preprocessed_data(hours_back=hours_back, limit=limit)
         
         if df.empty:
             return []
@@ -556,18 +287,24 @@ async def get_preprocessed_data(hours_back: Optional[int] = None, limit: Optiona
         # Convert to response format
         data = []
         for index, row in df.iterrows():
+            # Extract time features from timestamp
+            hour = index.hour
+            minute = index.minute
+            day_of_week = index.dayofweek
+            month = index.month
+            
             data.append(PreprocessedDataResponse(
                 timestamp=index,
                 temperature=float(row.get('temperature', 0)),
                 humidity=float(row.get('humidity', 0)),
                 pressure=float(row.get('pressure', 0)),
-                temperature_normalized=float(row.get('temperature_normalized', 0)),
-                humidity_normalized=float(row.get('humidity_normalized', 0)),
-                pressure_normalized=float(row.get('pressure_normalized', 0)),
-                hour=int(row.get('hour', 0)),
-                minute=int(row.get('minute', 0)),
-                day_of_week=int(row.get('day_of_week', 0)),
-                month=int(row.get('month', 0))
+                temperature_normalized=float(row.get('temperature', 0)),  # Use original value as normalized
+                humidity_normalized=float(row.get('humidity', 0)),       # Use original value as normalized
+                pressure_normalized=float(row.get('pressure', 0)),       # Use original value as normalized
+                hour=hour,
+                minute=minute,
+                day_of_week=day_of_week,
+                month=month
             ))
         
         return data
@@ -580,7 +317,7 @@ async def get_preprocessed_data(hours_back: Optional[int] = None, limit: Optiona
 async def get_preprocessed_stats():
     """Get statistics about preprocessed data"""
     try:
-        stats = data_processor.fetch_preprocessed_data_stats()
+        stats = weather_data_controller.fetch_preprocessed_data_stats()
         return stats
         
     except Exception as e:
@@ -591,8 +328,8 @@ async def get_preprocessed_stats():
 async def get_system_status():
     """Get system status including initialization and training status"""
     try:
-        preprocessed_stats = data_processor.fetch_preprocessed_data_stats()
-        last_export_time = data_processor.preprocessor.get_last_export_time()
+        preprocessed_stats = weather_data_controller.fetch_preprocessed_data_stats()
+        last_export_time = weather_data_controller.preprocessor.get_last_export_time()
         # Check if scheduler is available and initialized
         scheduler_status = {
             "is_initialized": False,
@@ -665,7 +402,7 @@ async def initialize_system(hours_back: int = 168):
         # Check data availability first
         logger.info("Checking data availability...")
         try:
-            raw_data = data_processor.fetch_recent_sensor_data(hours=1)
+            raw_data = weather_data_controller.fetch_recent_sensor_data(hours=1)
             logger.info(f"Raw data check: {len(raw_data)} records found")
             if raw_data.empty:
                 logger.warning("No sensor data available")
@@ -742,7 +479,7 @@ async def process_data(force_full_export: bool = False, hours_back: int = 168):
     try:
         logger.info("Manual data processing requested")
         
-        raw_df, processed_df = data_processor.process_and_store_new_data(
+        raw_df, processed_df = weather_data_controller.process_and_store_new_data(
             force_full_export=force_full_export,
             hours_back=hours_back
         )
@@ -780,7 +517,7 @@ async def clear_preprocessed_data(older_than_days: Optional[int] = None):
     try:
         logger.info("Manual preprocessed data clearing requested")
         
-        deleted_count = data_processor.purge_old_preprocessed_data(older_than_days=older_than_days)
+        deleted_count = weather_data_controller.purge_old_preprocessed_data(older_than_days=older_than_days)
         
         return {
             "message": f"Cleared {deleted_count} preprocessed records",
@@ -911,8 +648,8 @@ async def test_database():
         source_status = {"connected": False, "error": None}
         try:
             # Try to get a simple count from source database
-            query = f"SELECT COUNT(*) as count FROM {data_processor.db_manager.sensor_data_table}"
-            df = pd.read_sql(query, data_processor.db_manager.source_engine)
+            query = f"SELECT COUNT(*) as count FROM {weather_data_controller.db_manager.sensor_data_table}"
+            df = pd.read_sql(query, weather_data_controller.db_manager.source_engine)
             source_status = {
                 "connected": True, 
                 "record_count": int(df['count'][0]) if not df.empty else 0
@@ -924,7 +661,7 @@ async def test_database():
         api_status = {"connected": False, "error": None, "tables_created": False}
         try:
             # First, test if we can connect to the API database
-            test_engine = data_processor.db_manager.api_engine
+            test_engine = weather_data_controller.db_manager.api_engine
             with test_engine.connect() as conn:
                 # Test basic connection - use SQLAlchemy 2.0 compatible syntax
                 from sqlalchemy import text
@@ -940,7 +677,7 @@ async def test_database():
             
             # Now try to query the Prediction table
             from database import Prediction
-            session = data_processor.db_manager.Session()
+            session = weather_data_controller.db_manager.Session()
             prediction_count = session.query(Prediction).count()
             session.close()
             api_status = {
@@ -955,10 +692,10 @@ async def test_database():
             "source_database": source_status,
             "api_database": api_status,
             "config": {
-                "source_host": data_processor.db_manager.config.SOURCE_DB_HOST,
-                "source_db": data_processor.db_manager.config.SOURCE_DB_NAME,
-                "api_host": data_processor.db_manager.config.API_DB_HOST,
-                "api_db": data_processor.db_manager.config.API_DB_NAME
+                "source_host": weather_data_controller.db_manager.config.SOURCE_DB_HOST,
+                "source_db": weather_data_controller.db_manager.config.SOURCE_DB_NAME,
+                "api_host": weather_data_controller.db_manager.config.API_DB_HOST,
+                "api_db": weather_data_controller.db_manager.config.API_DB_NAME
             }
         }
         

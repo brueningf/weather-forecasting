@@ -1,37 +1,15 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Temperature Comparison</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+{% extends 'base.html' %}
+{% block title %}Temperature Comparison{% endblock %}
+{% block head %}
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#4facfe',
-                        secondary: '#00f2fe',
-                        gradient: {
-                            start: '#667eea',
-                            end: '#764ba2'
-                        }
-                    }
-                }
-            }
-        }
-    </script>
-</head>
-<body class="bg-gradient-to-br from-gradient-start to-gradient-end min-h-screen p-5">
-    <div x-data="temperatureApp()" class="max-w-6xl mx-auto bg-white rounded-2xl shadow-2xl overflow-hidden">
+{% endblock %}
+{% block content %}
+    <div x-data="temperatureApp()">
         <!-- Header -->
-        <div class="bg-gradient-to-r from-primary to-secondary text-white p-8 text-center">
+        <div class="bg-gradient-to-r from-blue-500 to-blue-700 text-white p-8 text-center">
             <h1 class="text-4xl font-bold mb-3">🌡️ Temperature Comparison</h1>
             <p class="text-lg opacity-90">Predicted vs Actual Temperature Values</p>
         </div>
-
         <!-- Controls -->
         <div class="p-6 bg-gray-50 border-b border-gray-200">
             <div class="flex flex-wrap items-center gap-4">
@@ -41,7 +19,7 @@
                         id="hours" 
                         x-model="hours" 
                         @change="loadData()"
-                        class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                        class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                         <option value="6">Last 6 hours</option>
                         <option value="12">Last 12 hours</option>
@@ -50,14 +28,13 @@
                         <option value="168">Last week</option>
                     </select>
                 </div>
-                
                 <div class="flex items-center gap-2">
                     <label for="module" class="text-gray-700 font-medium">Module:</label>
                     <select 
                         id="module" 
                         x-model="selectedModule" 
                         @change="loadData()"
-                        class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                        class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                         <option value="">All Modules</option>
                         <template x-for="module in availableModules" :key="module">
@@ -65,10 +42,9 @@
                         </template>
                     </select>
                 </div>
-                
                 <button 
                     @click="loadData()" 
-                    class="bg-primary hover:bg-blue-600 text-white border-none py-2 px-4 rounded-lg cursor-pointer transition-colors duration-300"
+                    class="bg-blue-500 hover:bg-blue-600 text-white border-none py-2 px-4 rounded-lg cursor-pointer transition-colors duration-300"
                     :disabled="loading"
                 >
                     <span x-show="!loading">🔄 Refresh</span>
@@ -76,26 +52,22 @@
                 </button>
             </div>
         </div>
-
         <!-- Loading State -->
         <div x-show="loading" class="text-center py-20 text-gray-600">
             <div class="text-2xl mb-2">⏳</div>
             Loading temperature data...
         </div>
-
         <!-- Error State -->
         <div 
             x-show="error" 
             x-text="error"
             class="bg-red-100 text-red-800 p-4 rounded-lg mx-6 mt-6 border border-red-200"
         ></div>
-
         <!-- Chart Container -->
         <div x-show="!loading && !error" class="p-6">
             <div class="bg-white rounded-xl border border-gray-200 p-6" style="height: 500px;">
                 <canvas id="temperatureChart" width="400" height="400"></canvas>
             </div>
-            
             <!-- Legend -->
             <div class="mt-6 flex justify-center">
                 <div class="flex items-center gap-6">
@@ -110,7 +82,6 @@
                 </div>
             </div>
         </div>
-
         <!-- Summary Stats -->
         <div x-show="!loading && !error && (actualData.length > 0 || predictedData.length > 0)" class="p-6 bg-gray-50 border-t border-gray-200">
             <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -133,7 +104,6 @@
             </div>
         </div>
     </div>
-
     <script>
         function temperatureApp() {
             return {
@@ -146,10 +116,9 @@
                 predictedData: [],
                 lastUpdated: 'Never',
                 chart: null,
-
                 async loadModules() {
                     try {
-                        const response = await fetch('/modules');
+                        const response = await fetch('/api/modules');
                         if (response.ok) {
                             const data = await response.json();
                             this.availableModules = data.modules || [];
@@ -158,35 +127,30 @@
                         console.error('Error loading modules:', error);
                     }
                 },
-
                 async loadData() {
                     this.loading = true;
                     this.error = null;
-
                     try {
                         // Load both actual and predicted data
                         const sensorUrl = this.selectedModule 
-                            ? `/sensor-data?hours=${this.hours}&module_id=${encodeURIComponent(this.selectedModule)}`
-                            : `/sensor-data?hours=${this.hours}`;
-                            
+                            ? `/api/sensor-data?hours=${this.hours}&module_id=${encodeURIComponent(this.selectedModule)}`
+                            : `/api/sensor-data?hours=${this.hours}`;
                         const [actualResponse, predictedResponse] = await Promise.all([
                             fetch(sensorUrl),
-                            fetch(`/predictions?hours=${this.hours}`)
+                            fetch(`/api/predictions?hours=${this.hours}`)
                         ]);
-
                         if (!actualResponse.ok) {
                             throw new Error(`HTTP error! status: ${actualResponse.status}`);
                         }
                         if (!predictedResponse.ok) {
                             throw new Error(`HTTP error! status: ${predictedResponse.status}`);
                         }
-
                         this.actualData = await actualResponse.json();
                         this.predictedData = await predictedResponse.json();
+                        console.log('Actual data received:', this.actualData); // Debug log
+                        console.log('Predicted data received:', this.predictedData); // Debug log
                         this.lastUpdated = new Date().toLocaleString();
-
                         this.updateChart();
-                        
                     } catch (error) {
                         console.error('Error loading data:', error);
                         this.error = `Error loading temperature data: ${error.message}`;
@@ -194,16 +158,13 @@
                         this.loading = false;
                     }
                 },
-
                 updateChart() {
                     const ctx = document.getElementById('temperatureChart');
-                    
                     // Destroy existing chart if it exists
                     if (this.chart) {
                         this.chart.destroy();
                         this.chart = null;
                     }
-
                     // Wait a bit for the canvas to be ready
                     setTimeout(() => {
                         // Prepare data for chart
@@ -216,7 +177,6 @@
                             })
                         );
                         const actualTemps = this.actualData.map(item => item.temperature);
-
                         const predictedLabels = this.predictedData.map(item => 
                             new Date(item.timestamp).toLocaleString('en-US', {
                                 month: 'short',
@@ -226,7 +186,6 @@
                             })
                         );
                         const predictedTemps = this.predictedData.map(item => item.predicted_temperature);
-
                         // Create chart
                         this.chart = new Chart(ctx, {
                             type: 'line',
@@ -286,7 +245,6 @@
                         });
                     }, 100);
                 },
-
                 init() {
                     this.loadModules();
                     this.loadData();
@@ -296,5 +254,4 @@
             }
         }
     </script>
-</body>
-</html> 
+{% endblock %} 
