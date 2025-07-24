@@ -128,6 +128,9 @@ class ModelPredictor:
     def train_model(self, df, epochs=100, batch_size=32, learning_rate=0.001):
         """Train the LSTM model on the provided data"""
         try:
+            if df.isnull().any().any():
+                logger.error("Training data contains NaN values! Please check preprocessing.")
+                return False
             X, y = self.prepare_training_data(df)
             if X is None or y is None:
                 logger.error("Could not prepare training data")
@@ -243,7 +246,6 @@ class ModelPredictor:
             logger.warning("Model is not trained. Cannot make predictions.")
             return pd.DataFrame()
         try:
-            # --- Timestamp frequency fix ---
             freq = pd.infer_freq(df.index)
             if freq is None:
                 # fallback: use median diff
@@ -295,31 +297,4 @@ class ModelPredictor:
             return pd.DataFrame()
         except Exception as e:
             logger.error(f"Error making predictions: {e}")
-            return pd.DataFrame()
-
-    def predict_future(self, current_data, hours_ahead=24):
-        try:
-            if current_data.empty or len(current_data) < self.sequence_length:
-                logger.warning("No current data provided for future prediction")
-                return pd.DataFrame()
-            if self.needs_training():
-                logger.warning("Model is not trained. Cannot make predictions.")
-                return pd.DataFrame()
-            # Use inferred frequency to determine periods
-            freq = pd.infer_freq(current_data.index)
-            if freq is None:
-                diffs = current_data.index.to_series().diff().dropna()
-                if not diffs.empty:
-                    freq = diffs.median()
-                else:
-                    freq = pd.Timedelta(minutes=10)
-            if isinstance(freq, str):
-                periods_per_hour = int(pd.Timedelta('1H') / pd.tseries.frequencies.to_offset(freq))
-            else:
-                periods_per_hour = int(pd.Timedelta('1H') / freq)
-            forecast_periods = hours_ahead * periods_per_hour
-            predictions_df = self.predict(current_data, forecast_periods=forecast_periods)
-            return predictions_df
-        except Exception as e:
-            logger.error(f"Error predicting future: {e}")
             return pd.DataFrame() 
