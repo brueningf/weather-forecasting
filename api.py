@@ -100,39 +100,6 @@ async def dashboard(request: Request):
     """Main dashboard with all features and analysis"""
     return templates.TemplateResponse("dashboard.html", {"request": request})
 
-@app.get("/stats-page", response_class=HTMLResponse)
-async def stats_page(request: Request):
-    """Serve the stats HTML page"""
-    return templates.TemplateResponse("stats.html", {"request": request})
-
-@app.get("/temperature-graph", response_class=HTMLResponse)
-async def temperature_graph_page(request: Request):
-    """Serve the temperature comparison graph HTML page"""
-    return templates.TemplateResponse("temperature-graph.html", {"request": request})
-
-@app.get("/sensor-data")
-async def redirect_sensor_data(hours: int = 24, module_id: Optional[str] = None):
-    """Redirect old sensor-data endpoint to new API endpoint"""
-    params = f"?hours={hours}"
-    if module_id:
-        params += f"&module_id={module_id}"
-    return RedirectResponse(url=f"/api/sensor-data{params}")
-
-@app.get("/predictions")
-async def redirect_predictions(hours: int = 24):
-    """Redirect old predictions endpoint to new API endpoint"""
-    return RedirectResponse(url=f"/api/predictions?hours={hours}")
-
-@app.get("/next-forecast")
-async def redirect_next_forecast():
-    """Redirect old next-forecast endpoint to new API endpoint"""
-    return RedirectResponse(url="/api/next-forecast")
-
-@app.get("/stats")
-async def redirect_stats():
-    """Redirect old stats endpoint to new API endpoint"""
-    return RedirectResponse(url="/api/stats")
-
 @app.get("/api/predictions", response_model=List[PredictionResponse])
 async def get_predictions(hours: int = 24):
     """Get weather predictions for the specified number of hours"""
