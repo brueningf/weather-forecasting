@@ -78,6 +78,53 @@
                 <h2 class="text-xl font-semibold mb-2">Recent Activity</h2>
                 <p class="text-gray-600">Add recent activity or logs here.</p>
             </div>
+            <!-- Model Benchmark Card -->
+            <div class="bg-white rounded-xl p-6 card-hover shadow-md col-span-1 md:col-span-2">
+                <h2 class="text-xl font-semibold mb-4">Model Benchmark</h2>
+                <div id="benchmark-metrics" class="flex flex-col md:flex-row gap-6 justify-center items-center">
+                    <div class="flex-1 text-center">
+                        <div class="text-2xl font-bold text-blue-700" id="mae-value">--</div>
+                        <div class="text-gray-600">MAE</div>
+                    </div>
+                    <div class="flex-1 text-center">
+                        <div class="text-2xl font-bold text-blue-700" id="rmse-value">--</div>
+                        <div class="text-gray-600">RMSE</div>
+                    </div>
+                    <div class="flex-1 text-center">
+                        <div class="text-2xl font-bold text-blue-700" id="r2-value">--</div>
+                        <div class="text-gray-600">R²</div>
+                    </div>
+                </div>
+                <div id="benchmark-error" class="text-red-500 text-center mt-2 hidden"></div>
+                <button onclick="refreshBenchmark()" class="mt-4 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg card-hover">🔄 Refresh Benchmark</button>
+            </div>
         </div>
     </div>
+    <script>
+    async function fetchBenchmark() {
+        try {
+            const res = await fetch('/api/model/benchmark');
+            if (!res.ok) {
+                const data = await res.json();
+                document.getElementById('benchmark-error').innerText = data.error || 'No benchmark data.';
+                document.getElementById('benchmark-error').classList.remove('hidden');
+                ['mae-value', 'rmse-value', 'r2-value'].forEach(id => document.getElementById(id).innerText = '--');
+                return;
+            }
+            const data = await res.json();
+            document.getElementById('mae-value').innerText = data.mae?.toFixed(3) ?? '--';
+            document.getElementById('rmse-value').innerText = data.rmse?.toFixed(3) ?? '--';
+            document.getElementById('r2-value').innerText = data.r2?.toFixed(3) ?? '--';
+            document.getElementById('benchmark-error').classList.add('hidden');
+        } catch (e) {
+            document.getElementById('benchmark-error').innerText = 'Error loading benchmark.';
+            document.getElementById('benchmark-error').classList.remove('hidden');
+        }
+    }
+    function refreshBenchmark() {
+        fetchBenchmark();
+    }
+    // Fetch on page load
+    fetchBenchmark();
+    </script>
 {% endblock %} 

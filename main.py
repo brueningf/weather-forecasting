@@ -53,7 +53,7 @@ async def train_initial_model(model_predictor=None):
         logger.info(f"Training data shape: {processed_df.shape}")
         
         # Train the model
-        success = model_predictor.train_model(processed_df, epochs=100, learning_rate=0.001)
+        success = model_predictor.train_model(processed_df, epochs=50, learning_rate=0.001)
         
         if success:
             logger.info("Initial model training completed successfully")

@@ -83,7 +83,10 @@ class DatabaseManager:
             session.add_all(preds)
             session.commit()
             session.close()
-            logger.info(f"Saved {len(predictions_df)} predictions to API database")
+            if len(predictions_df) > 10:
+                logger.info(f"Saved {len(predictions_df)} predictions to API database")
+            else:
+                logger.debug(f"Saved {len(predictions_df)} predictions to API database")
         except Exception as e:
             logger.error(f"Error saving predictions to API database: {e}")
 

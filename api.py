@@ -1,10 +1,10 @@
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend to prevent tkinter errors
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse, Response, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi import Request
 from pydantic import BaseModel
@@ -1135,3 +1135,99 @@ async def get_temporal_plot():
         plt.close(fig)
         
         return Response(content=img_data.getvalue(), media_type="image/png") 
+
+@app.get("/api/analysis/temperature-comparison")
+async def get_temperature_comparison_plot(
+    hours: int = Query(24, ge=1, le=168),
+    module_id: str = None,
+    data_type: str = Query('preprocessed', regex='^(preprocessed|source)$')
+):
+    """Generate temperature comparison plot (actual vs predicted, past & future)"""
+    try:
+        # Fetch actual data (preprocessed or source)
+        if data_type == 'preprocessed':
+            actual_data = weather_data_controller.fetch_preprocessed_data(hours_back=hours)
+            if actual_data is not None and not actual_data.empty:
+                actual_data = actual_data.reset_index()
+                # Normalize columns
+                actual_data = actual_data[['timestamp', 'temperature', 'humidity', 'pressure']]
+                if module_id and 'module' in actual_data.columns:
+                    actual_data = actual_data[actual_data['module'] == module_id]
+        else:
+            actual_data = weather_data_controller.fetch_recent_sensor_data(hours=hours, module_id=module_id)
+            if actual_data is not None and not actual_data.empty:
+                # Normalize columns
+                actual_data = actual_data[['timestamp', 'temperature', 'humidity', 'pressure']]
+        # Sort by timestamp
+        if actual_data is not None and not actual_data.empty:
+            actual_data = actual_data.sort_values('timestamp')
+        # Fetch predictions
+        predictions_df = weather_data_controller.get_latest_predictions(hours=hours)
+        if predictions_df is not None and not predictions_df.empty:
+            predictions_df = predictions_df.copy()
+            predictions_df['timestamp'] = pd.to_datetime(predictions_df['timestamp'])
+            predictions_df = predictions_df.sort_values('timestamp')
+        # If both are empty, show placeholder
+        if (actual_data is None or actual_data.empty) and (predictions_df is None or predictions_df.empty):
+            fig, ax = plt.subplots(figsize=(12, 6))
+            ax.text(0.5, 0.5, 'No data available', ha='center', va='center', transform=ax.transAxes, fontsize=16)
+            ax.set_title('Temperature Comparison - No Data Available')
+            ax.axis('off')
+            canvas = FigureCanvas(fig)
+            canvas.draw()
+            img_data = io.BytesIO()
+            fig.savefig(img_data, format='png', dpi=100, bbox_inches='tight')
+            img_data.seek(0)
+            plt.close(fig)
+            return Response(content=img_data.getvalue(), media_type="image/png")
+        fig, ax = plt.subplots(figsize=(12, 6))
+        now = pd.Timestamp.now()
+        # Plot actual data
+        if actual_data is not None and not actual_data.empty:
+            ax.plot(actual_data['timestamp'], actual_data['temperature'], label=f'{data_type.capitalize()} Data', color='royalblue', marker='o', alpha=0.7)
+        # Plot predictions (split past/future)
+        if predictions_df is not None and not predictions_df.empty:
+            past_pred = predictions_df[predictions_df['timestamp'] <= now]
+            future_pred = predictions_df[predictions_df['timestamp'] > now]
+            if not past_pred.empty:
+                ax.plot(past_pred['timestamp'], past_pred['predicted_temperature'], label='Past Predictions', color='crimson', linestyle='-', marker='x', alpha=0.7)
+            if not future_pred.empty:
+                ax.plot(future_pred['timestamp'], future_pred['predicted_temperature'], label='Future Predictions', color='purple', linestyle='--', marker='x', alpha=0.7)
+        # Mark 'now' with a vertical line
+        ax.axvline(now, color='black', linestyle=':', linewidth=2, label='Now')
+        ax.set_title(f'Temperature Comparison (Last {hours} hours)')
+        ax.set_xlabel('Time')
+        ax.set_ylabel('Temperature (°C)')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        fig.autofmt_xdate()
+        plt.tight_layout()
+        # Convert plot to image
+        canvas = FigureCanvas(fig)
+        canvas.draw()
+        img_data = io.BytesIO()
+        fig.savefig(img_data, format='png', dpi=100, bbox_inches='tight')
+        img_data.seek(0)
+        plt.close(fig)
+        return Response(content=img_data.getvalue(), media_type="image/png")
+    except Exception as e:
+        logger.error(f"Error generating temperature comparison plot: {e}")
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.text(0.5, 0.5, f'Error generating plot: {str(e)}', ha='center', va='center', transform=ax.transAxes, fontsize=14, color='red')
+        ax.set_title('Temperature Comparison - Error')
+        ax.axis('off')
+        canvas = FigureCanvas(fig)
+        canvas.draw()
+        img_data = io.BytesIO()
+        fig.savefig(img_data, format='png', dpi=100, bbox_inches='tight')
+        img_data.seek(0)
+        plt.close(fig)
+        return Response(content=img_data.getvalue(), media_type="image/png") 
+
+@app.get("/api/model/benchmark")
+def get_model_benchmark():
+    """Return latest model benchmark metrics (MAE, RMSE, R2)"""
+    metrics = model_predictor.get_latest_metrics()
+    if metrics is None:
+        return JSONResponse(content={"error": "No benchmark metrics available. Retrain the model first."}, status_code=404)
+    return metrics 

@@ -125,6 +125,23 @@ class ModelPredictor:
             logger.error(f"Error preparing training data: {e}")
             return None, None
 
+    def compute_metrics(self, X, y_true):
+        """Compute MAE, RMSE, and R2 for the model on given data."""
+        import torch
+        from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+        self.model.eval()
+        with torch.no_grad():
+            X_tensor = torch.FloatTensor(X).to(self.device)
+            preds = self.model(X_tensor).cpu().numpy().flatten()
+        mae = mean_absolute_error(y_true, preds)
+        rmse = mean_squared_error(y_true, preds, squared=False)
+        r2 = r2_score(y_true, preds)
+        return {"mae": float(mae), "rmse": float(rmse), "r2": float(r2)}
+
+    def get_latest_metrics(self):
+        """Return the latest benchmark metrics if available."""
+        return getattr(self, '_latest_metrics', None)
+
     def train_model(self, df, epochs=100, batch_size=32, learning_rate=0.001):
         """Train the LSTM model on the provided data"""
         try:
@@ -174,8 +191,12 @@ class ModelPredictor:
                 if epoch % 20 == 0:
                     logger.info(f"Epoch {epoch}: Train Loss: {loss.item():.4f}, Val Loss: {val_loss.item():.4f}")
             self.is_trained = True
+            # Compute metrics on validation set
+            metrics = self.compute_metrics(X_val, y_val)
+            self._latest_metrics = metrics
             self.save_model()
             logger.info(f"Training completed. Final validation loss: {best_val_loss:.4f}")
+            logger.info(f"Validation metrics: MAE={metrics['mae']:.3f}, RMSE={metrics['rmse']:.3f}, R2={metrics['r2']:.3f}")
             return True
         except Exception as e:
             logger.error(f"Error training model: {e}")
@@ -292,7 +313,8 @@ class ModelPredictor:
                     'confidence': 0.8
                 })
                 predictions_df.set_index('timestamp', inplace=True)
-                logger.info(f"Generated {len(predictions_df)} predictions for future timestamps")
+                # Remove or downgrade this noisy log
+                # logger.info(f"Generated {len(predictions_df)} predictions for future timestamps")
                 return predictions_df
             return pd.DataFrame()
         except Exception as e:
