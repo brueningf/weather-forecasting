@@ -329,86 +329,6 @@ async def get_system_status():
         logger.error(f"Error getting system status: {e}")
         raise HTTPException(status_code=500, detail="Error retrieving system status")
 
-@app.post("/api/initialize-system")
-async def initialize_system(hours_back: int = 168):
-    """Initialize the system with full data export and model training"""
-    try:
-        logger.info("Manual system initialization requested")
-        
-        # Ensure scheduler exists
-        if scheduler is None:
-            logger.info("Scheduler is None - creating it now...")
-            try:
-                created_scheduler = create_scheduler(model_predictor)
-                if created_scheduler is None:
-                    logger.error("create_scheduler returned None")
-                    raise HTTPException(status_code=500, detail="Failed to create scheduler - returned None")
-                logger.info("Scheduler created successfully")
-            except Exception as scheduler_error:
-                logger.error(f"Error creating scheduler: {scheduler_error}")
-                import traceback
-                logger.error(f"Scheduler creation traceback: {traceback.format_exc()}")
-                raise HTTPException(status_code=500, detail=f"Failed to create scheduler: {str(scheduler_error)}")
-        
-        # Double-check scheduler exists
-        if scheduler is None:
-            logger.error("Scheduler is still None after creation attempt")
-            raise HTTPException(status_code=500, detail="Failed to create scheduler - scheduler is still None")
-        
-        if scheduler.is_initialized:
-            logger.info("System already initialized")
-            return {"message": "System already initialized", "status": "success"}
-        
-        # Perform initial setup
-        logger.info(f"Starting system initialization with {hours_back} hours of data")
-        
-        # Check data availability first
-        logger.info("Checking data availability...")
-        try:
-            raw_data = weather_data_controller.fetch_recent_sensor_data(hours=1)
-            logger.info(f"Raw data check: {len(raw_data)} records found")
-            if raw_data.empty:
-                logger.warning("No sensor data available")
-                raise HTTPException(
-                    status_code=500, 
-                    detail="System initialization failed: No sensor data available. Please ensure your sensor data source is connected and has data."
-                )
-        except Exception as data_check_error:
-            logger.error(f"Data availability check failed: {data_check_error}")
-            raise HTTPException(
-                status_code=500, 
-                detail="System initialization failed: Unable to access data source. Please check your database configuration."
-            )
-        
-        # Try to perform initial setup
-        logger.info("Attempting to perform initial setup...")
-        try:
-            success = scheduler.perform_initial_setup(hours_back=hours_back)
-        except Exception as setup_error:
-            logger.error(f"Error in perform_initial_setup: {setup_error}")
-            import traceback
-            logger.error(f"Initial setup traceback: {traceback.format_exc()}")
-            raise HTTPException(status_code=500, detail=f"Initial setup failed: {str(setup_error)}")
-        
-        if success:
-            scheduler.is_initialized = True
-            logger.info("System initialization completed successfully")
-            return {"message": "System initialized successfully", "status": "success"}
-        else:
-            logger.error("System initialization failed - perform_initial_setup returned False")
-            raise HTTPException(
-                status_code=500, 
-                detail="System initialization failed: Unable to process data or train model. Check logs for details."
-            )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error in manual system initialization: {e}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Error during system initialization: {str(e)}")
-
 @app.post("/api/retrain-model")
 async def retrain_model(hours_back: int = 168):
     """Manually trigger model retraining"""
@@ -1017,12 +937,13 @@ async def get_temporal_plot():
         if len(df) > 7:
             daily_temp = df.groupby(df.index.dayofweek)['temperature'].mean()
             day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-            axes[0,1].bar(range(7), daily_temp.values)
+            # Use only the days present in daily_temp.index
+            axes[0,1].bar(daily_temp.index, daily_temp.values)
             axes[0,1].set_title('Average Temperature by Day of Week')
             axes[0,1].set_xlabel('Day of Week')
             axes[0,1].set_ylabel('Temperature (°C)')
-            axes[0,1].set_xticks(range(7))
-            axes[0,1].set_xticklabels(day_names)
+            axes[0,1].set_xticks(daily_temp.index)
+            axes[0,1].set_xticklabels([day_names[i] for i in daily_temp.index])
             axes[0,1].grid(True, alpha=0.3)
         else:
             axes[0,1].text(0.5, 0.5, 'Insufficient data for daily pattern', 
@@ -1194,3 +1115,8 @@ def get_model_benchmark():
     if metrics is None:
         return JSONResponse(content={"error": "No benchmark metrics available. Retrain the model first."}, status_code=404)
     return metrics 
+
+@app.get("/temperature", response_class=HTMLResponse)
+async def temperature_page(request: Request):
+    """Serve the temperature (actual vs predicted) graph HTML page"""
+    return templates.TemplateResponse("temperature-graph.html", {"request": request}) 
