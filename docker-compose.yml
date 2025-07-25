@@ -1,0 +1,23 @@
+version: '3'
+services:
+  app:
+    image: python:3.11-slim
+    container_name: weather-forecasting
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - .:/app
+    expose:
+      - "8000"
+    environment:
+      - VIRTUAL_HOST=weather.fredesk.com
+      - LETSENCRYPT_HOST=weather.fredesk.com
+      - VIRTUAL_PROTO=http
+      - VIRTUAL_PORT=8000
+    command: >
+      sh -c "pip install --no-cache-dir -r requirements.txt &&
+             uvicorn main:app --host 0.0.0.0 --port 8000"
+networks:
+  default:
+    name: www
+    external: true
