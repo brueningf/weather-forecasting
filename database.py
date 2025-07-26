@@ -141,11 +141,12 @@ class DatabaseManager:
             session.close()
             return {
                 "prediction_records": prediction_count,
-                "latest_prediction": latest_prediction.timestamp.isoformat() if latest_prediction else None
+                "latest_prediction": latest_prediction.timestamp.isoformat() if latest_prediction else None,
+                "status": "online"  # Database is online if query succeeds
             }
         except Exception as e:
             logger.error(f"Error getting API database stats: {e}")
-            return {"prediction_records": 0, "latest_prediction": None}
+            return {"prediction_records": 0, "latest_prediction": None, "status": "offline"}
 
     def get_source_database_stats(self):
         """Get statistics from source database (pandas)"""
@@ -153,11 +154,12 @@ class DatabaseManager:
             df = pd.read_sql(f"SELECT COUNT(*) as count, MAX(timestamp) as latest FROM {self.sensor_data_table}", self.source_engine)
             return {
                 "sensor_records": int(df['count'][0]),
-                "latest_sensor_data": df['latest'][0].isoformat() if pd.notnull(df['latest'][0]) else None
+                "latest_sensor_data": df['latest'][0].isoformat() if pd.notnull(df['latest'][0]) else None,
+                "status": "online"  # Database is online if query succeeds
             }
         except Exception as e:
             logger.error(f"Error getting source database stats: {e}")
-            return {"sensor_records": 0, "latest_sensor_data": None}
+            return {"sensor_records": 0, "latest_sensor_data": None, "status": "offline"}
 
     def save_preprocessed_data(self, df, batch_id=None):
         """Save preprocessed data to API database using ORM (timestamp, temperature, humidity, pressure)"""
@@ -240,7 +242,8 @@ class DatabaseManager:
                 "preprocessed_records": preprocessed_count,
                 "latest_preprocessed": latest.timestamp.isoformat() if latest else None,
                 "earliest_preprocessed": earliest.timestamp.isoformat() if earliest else None,
-                "batch_count": batch_count
+                "batch_count": batch_count,
+                "status": "online"  # Database is online if query succeeds
             }
         except Exception as e:
             logger.error(f"Error getting preprocessed data stats: {e}")
@@ -248,7 +251,8 @@ class DatabaseManager:
                 "preprocessed_records": 0,
                 "latest_preprocessed": None,
                 "earliest_preprocessed": None,
-                "batch_count": 0
+                "batch_count": 0,
+                "status": "offline"
             }
 
     def clear_preprocessed_data(self, older_than_days=None):

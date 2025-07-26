@@ -8,10 +8,11 @@ from config import Config
 import logging
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+import json
+from sklearn.metrics import mean_absolute_error, mean_squared_error, root_mean_squared_error, r2_score
 
 logger = logging.getLogger(__name__)
 
-# --- NEW: LSTM Model ---
 class LSTMWeatherModel(nn.Module):
     """LSTM-based neural network for weather prediction"""
     def __init__(self, input_size=7, hidden_size=64, num_layers=2, output_size=1, dropout=0.2):
@@ -36,6 +37,17 @@ class ModelPredictor:
         self.is_trained = False
         self.sequence_length = sequence_length  # e.g., use last 12 steps (2 hours if 10min freq)
         self.load_model()
+
+    def _add_time_features(self, df):
+        """Add time-based features to the dataframe."""
+        df_enhanced = df.copy()
+        df_enhanced['hour'] = df_enhanced.index.hour
+        df_enhanced['month'] = df_enhanced.index.month
+        df_enhanced['hour_sin'] = np.sin(2 * np.pi * df_enhanced['hour'] / 24)
+        df_enhanced['hour_cos'] = np.cos(2 * np.pi * df_enhanced['hour'] / 24)
+        df_enhanced['month_sin'] = np.sin(2 * np.pi * df_enhanced['month'] / 12)
+        df_enhanced['month_cos'] = np.cos(2 * np.pi * df_enhanced['month'] / 12)
+        return df_enhanced
 
     def load_model(self):
         """Load the trained model"""
@@ -62,11 +74,21 @@ class ModelPredictor:
                 self.is_trained = False
                 logger.info("Created default LSTM model (no trained model found)")
             self.model.eval()
+            # Load metrics from disk if available
+            self._latest_metrics = None
+            if os.path.exists(self.config.METRICS_PATH):
+                try:
+                    with open(self.config.METRICS_PATH, 'r') as f:
+                        self._latest_metrics = json.load(f)
+                    logger.info(f"Loaded metrics from {self.config.METRICS_PATH}")
+                except Exception as e:
+                    logger.warning(f"Could not load metrics from {self.config.METRICS_PATH}: {e}")
         except Exception as e:
             logger.error(f"Error loading model: {e}")
             self.model = LSTMWeatherModel()
             self.is_trained = False
             self.model.eval()
+            self._latest_metrics = None
 
     def save_model(self):
         """Save the trained model"""
@@ -81,6 +103,14 @@ class ModelPredictor:
                 }
                 torch.save(checkpoint, self.config.MODEL_PATH)
                 logger.info(f"Model saved to {self.config.MODEL_PATH}")
+                # Save metrics to disk if available
+                if hasattr(self, '_latest_metrics') and self._latest_metrics is not None:
+                    try:
+                        with open(self.config.METRICS_PATH, 'w') as f:
+                            json.dump(self._latest_metrics, f)
+                        logger.info(f"Metrics saved to {self.config.METRICS_PATH}")
+                    except Exception as e:
+                        logger.warning(f"Could not save metrics to {self.config.METRICS_PATH}: {e}")
         except Exception as e:
             logger.error(f"Error saving model: {e}")
 
@@ -90,13 +120,7 @@ class ModelPredictor:
             logger.warning("Insufficient data for training")
             return None, None
         try:
-            df_enhanced = df.copy()
-            df_enhanced['hour'] = df_enhanced.index.hour
-            df_enhanced['month'] = df_enhanced.index.month
-            df_enhanced['hour_sin'] = np.sin(2 * np.pi * df_enhanced['hour'] / 24)
-            df_enhanced['hour_cos'] = np.cos(2 * np.pi * df_enhanced['hour'] / 24)
-            df_enhanced['month_sin'] = np.sin(2 * np.pi * df_enhanced['month'] / 12)
-            df_enhanced['month_cos'] = np.cos(2 * np.pi * df_enhanced['month'] / 12)
+            df_enhanced = self._add_time_features(df)
             features = [
                 'temperature', 'humidity', 'pressure',
                 'hour_sin', 'hour_cos', 'month_sin', 'month_cos'
@@ -128,13 +152,12 @@ class ModelPredictor:
     def compute_metrics(self, X, y_true):
         """Compute MAE, RMSE, and R2 for the model on given data."""
         import torch
-        from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
         self.model.eval()
         with torch.no_grad():
             X_tensor = torch.FloatTensor(X).to(self.device)
             preds = self.model(X_tensor).cpu().numpy().flatten()
         mae = mean_absolute_error(y_true, preds)
-        rmse = mean_squared_error(y_true, preds, squared=False)
+        rmse = root_mean_squared_error(y_true, preds)
         r2 = r2_score(y_true, preds)
         return {"mae": float(mae), "rmse": float(rmse), "r2": float(r2)}
 
@@ -164,10 +187,13 @@ class ModelPredictor:
             best_val_loss = float('inf')
             patience = 10
             patience_counter = 0
+
             logger.info(f"Starting LSTM training with {len(X_train)} samples, {epochs} epochs")
+
             for epoch in range(epochs):
                 self.model.train()
                 permutation = torch.randperm(X_train_tensor.size(0))
+
                 for i in range(0, X_train_tensor.size(0), batch_size):
                     indices = permutation[i:i+batch_size]
                     batch_X, batch_y = X_train_tensor[indices], y_train_tensor[indices]
@@ -176,25 +202,32 @@ class ModelPredictor:
                     loss = criterion(outputs.squeeze(), batch_y)
                     loss.backward()
                     optimizer.step()
+
                 self.model.eval()
+
                 with torch.no_grad():
                     val_outputs = self.model(X_val_tensor)
                     val_loss = criterion(val_outputs.squeeze(), y_val_tensor)
+
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     patience_counter = 0
                 else:
                     patience_counter += 1
+
                 if patience_counter >= patience:
                     logger.info(f"Early stopping at epoch {epoch}")
                     break
+
                 if epoch % 20 == 0:
                     logger.info(f"Epoch {epoch}: Train Loss: {loss.item():.4f}, Val Loss: {val_loss.item():.4f}")
+
             self.is_trained = True
+
             # Compute metrics on validation set
             metrics = self.compute_metrics(X_val, y_val)
             self._latest_metrics = metrics
-            self.save_model()
+            self.save_model()  # This will now also save metrics
             logger.info(f"Training completed. Final validation loss: {best_val_loss:.4f}")
             logger.info(f"Validation metrics: MAE={metrics['mae']:.3f}, RMSE={metrics['rmse']:.3f}, R2={metrics['r2']:.3f}")
             return True
@@ -207,13 +240,7 @@ class ModelPredictor:
         if df.empty or len(df) < self.sequence_length:
             return None
         try:
-            df_enhanced = df.copy()
-            df_enhanced['hour'] = df_enhanced.index.hour
-            df_enhanced['month'] = df_enhanced.index.month
-            df_enhanced['hour_sin'] = np.sin(2 * np.pi * df_enhanced['hour'] / 24)
-            df_enhanced['hour_cos'] = np.cos(2 * np.pi * df_enhanced['hour'] / 24)
-            df_enhanced['month_sin'] = np.sin(2 * np.pi * df_enhanced['month'] / 12)
-            df_enhanced['month_cos'] = np.cos(2 * np.pi * df_enhanced['month'] / 12)
+            df_enhanced = self._add_time_features(df)
             features = [
                 'temperature', 'humidity', 'pressure',
                 'hour_sin', 'hour_cos', 'month_sin', 'month_cos'

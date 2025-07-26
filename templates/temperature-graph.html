@@ -61,15 +61,98 @@
                 >
                     🔄 Refresh
                 </button>
+                <!-- Predict Now button removed -->
+                <div class="flex items-center gap-2">
+                    <label for="futureHours" class="text-gray-700 font-medium">Live Prediction Range:</label>
+                    <select 
+                        id="futureHours" 
+                        x-model="futureHours" 
+                        @change="refreshLivePredictions()"
+                        class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    >
+                        <option value="6" selected>Next 6 hours</option>
+                        <option value="12">Next 12 hours</option>
+                        <option value="24">Next 24 hours</option>
+                        <option value="48">Next 48 hours</option>
+                        <option value="168">Next week</option>
+                    </select>
+                </div>
             </div>
         </div>
         <!-- Chart Container -->
-        <div class="p-6">
-            <div class="bg-white rounded-xl border border-gray-200 p-6 flex flex-col items-center justify-center" style="min-height: 500px;">
-                <img id="temperature-comparison-plot" :src="`/api/analysis/temperature-comparison?hours=${hours}${selectedModule ? `&module_id=${encodeURIComponent(selectedModule)}` : ''}&data_type=${dataType}`" alt="Temperature Comparison" class="w-full max-w-4xl rounded-lg shadow-sm border" style="min-height: 400px; background: #f8fafc;" @load="loading=false" @error="error='Failed to load image'">
-            </div>
-            <div class="mt-4 text-sm text-gray-500 text-center">Last updated: <span x-text="lastUpdated"></span></div>
-            <div x-show="error" class="text-red-600 text-center mt-2" x-text="error"></div>
+        <div class="flex justify-center mt-8">
+            <img id="temperature-comparison-plot" class="rounded-lg shadow-lg border border-gray-200" style="max-width: 100%; height: auto; min-width: 300px;" alt="Temperature Comparison Plot" />
         </div>
+        <!-- Dynamic Predictions Graph -->
+        <div class="flex flex-col items-center mt-12">
+            <h2 class="text-2xl font-semibold mb-4">Live Predictions</h2>
+            <canvas id="live-predictions-chart" width="800" height="300"></canvas>
+        </div>
+        <script>
+        let livePredictionsChart;
+        let futureHours = 6;
+        function getFutureHours() {
+            const el = document.getElementById('futureHours');
+            if (el) return parseInt(el.value, 10) || 6;
+            return 6;
+        }
+        async function fetchAndUpdateLivePredictions() {
+            try {
+                const future_hours = getFutureHours();
+                const past_points = 4;
+                const total_hours = future_hours + past_points;
+                const res = await fetch(`/api/predictions?hours=${total_hours}`);
+                if (!res.ok) throw new Error('Failed to fetch predictions');
+                const data = await res.json();
+                const now = new Date();
+                // Split into past and future
+                const past = data.filter(d => new Date(d.timestamp) < now);
+                const future = data.filter(d => new Date(d.timestamp) >= now && new Date(d.timestamp) <= new Date(now.getTime() + future_hours * 60 * 60 * 1000));
+                const selected = past.concat(future);
+                // Sort the combined data chronologically by timestamp
+                selected.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                const labels = selected.map(d => d.timestamp);
+                const values = selected.map(d => d.predicted_temperature);
+                if (!livePredictionsChart) {
+                    const ctx = document.getElementById('live-predictions-chart').getContext('2d');
+                    livePredictionsChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'Predicted Temperature',
+                                data: values,
+                                borderColor: 'rgba(34,197,94,1)',
+                                backgroundColor: 'rgba(34,197,94,0.1)',
+                                fill: true,
+                                tension: 0.3,
+                                pointRadius: 2
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            scales: {
+                                x: { title: { display: true, text: 'Time' } },
+                                y: { title: { display: true, text: 'Temperature (°C)' } }
+                            }
+                        }
+                    });
+                } else {
+                    livePredictionsChart.data.labels = labels;
+                    livePredictionsChart.data.datasets[0].data = values;
+                    livePredictionsChart.update();
+                }
+            } catch (e) {
+                console.error('Error updating live predictions:', e);
+            }
+        }
+        function refreshLivePredictions() {
+            fetchAndUpdateLivePredictions();
+        }
+        setInterval(fetchAndUpdateLivePredictions, 10000);
+        window.addEventListener('DOMContentLoaded', fetchAndUpdateLivePredictions);
+        </script>
+        <div class="mt-4 text-sm text-gray-500 text-center">Last updated: <span x-text="lastUpdated"></span></div>
+        <div x-show="error" class="text-red-600 text-center mt-2" x-text="error"></div>
     </div>
 {% endblock %} 

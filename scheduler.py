@@ -2,7 +2,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
 import logging
-import asyncio
 from datetime import datetime, timedelta
 import pandas as pd
 import os
@@ -72,7 +71,7 @@ class WeatherScheduler:
             logger.info(f"Performing initial setup with {hours_back} hours of data")
             
             # Process and save data (full export)
-            raw_df, processed_df = self.data_processor.process_and_store_new_data(
+            _, processed_df = self.data_processor.process_and_store_new_data(
                 force_full_export=True, 
                 hours_back=hours_back
             )
@@ -133,7 +132,7 @@ class WeatherScheduler:
             logger.info(f"Starting data collection at {datetime.now()}")
             
             # Process and save new data only
-            raw_df, processed_df = self.data_processor.process_and_store_new_data()
+            _, processed_df = self.data_processor.process_and_store_new_data()
             
             if processed_df is None or processed_df.empty:
                 logger.info("No new data to process")
@@ -179,26 +178,69 @@ class WeatherScheduler:
             preprocessed_df = preprocessed_df.sort_index()
             sequence_length = self.model_predictor.sequence_length
 
-            # 4. For each missing timestamp, use last N real data points as history
+            # Ensure the latest data is recent enough (within 2x prediction interval)
+            latest_data_time = preprocessed_df.index[-1]
+            max_age = timedelta(minutes=2 * self.config.PREDICTION_INTERVAL_MINUTES)
+            use_predictions_as_history = False
+            if now - latest_data_time > max_age:
+                logger.warning(f"Latest preprocessed data is too old for prediction (latest: {latest_data_time}, now: {now}). Using predictions as history.")
+                use_predictions_as_history = True
+
+            # 4. Build accumulated history like backfill method for better accuracy
+            if not use_predictions_as_history:
+                # Start with preprocessed data as base history
+                history_df = preprocessed_df.copy()
+            else:
+                # Use predictions as base history
+                pred_history_df = self.data_processor.db_manager.get_latest_predictions(hours=24)
+                if pred_history_df is None or pred_history_df.empty:
+                    logger.warning("No predictions available to use as history")
+                    return
+                pred_history_df = pred_history_df.sort_values('timestamp')
+                pred_history_df = pred_history_df.set_index('timestamp')
+                
+                # Get last known humidity/pressure from preprocessed data
+                last_actual = preprocessed_df.iloc[-1] if not preprocessed_df.empty else None
+                humidity = last_actual['humidity'] if last_actual is not None and 'humidity' in last_actual else 50.0
+                pressure = last_actual['pressure'] if last_actual is not None and 'pressure' in last_actual else 1013.0
+                
+                # Convert predictions to the format expected by the model
+                history_df = pred_history_df.copy()
+                history_df['temperature'] = history_df['predicted_temperature']
+                history_df['humidity'] = humidity
+                history_df['pressure'] = pressure
+                history_df = history_df[['temperature', 'humidity', 'pressure']]
+
+            # 5. For each missing timestamp, use accumulated history for prediction
             for ts in missing_times:
                 # Only predict if we have enough history
-                history_window = preprocessed_df[preprocessed_df.index < ts].tail(sequence_length)
+                history_window = history_df[history_df.index < ts].tail(sequence_length)
                 if len(history_window) < sequence_length:
                     logger.warning(f"Not enough history for prediction at {ts} (have {len(history_window)}, need {sequence_length})")
                     continue
+                
                 input_df = history_window.copy()
-                input_df.index.name = 'timestamp'  # Ensure index is named for downstream code
+                input_df.index.name = 'timestamp'
+                logger.debug(f"Prediction input window for {ts}: shape={input_df.shape}, values=\n{input_df}")
+                
                 pred_df = self.model_predictor.predict(input_df, forecast_periods=1)
                 if pred_df.empty:
                     logger.warning(f"No prediction generated for {ts}")
                     continue
+                
                 pred_temp = float(pred_df.iloc[0]['predicted_temperature'])
-                last_row = history_window.iloc[-1]
+                last_row = input_df.iloc[-1]
                 pred_row = {
                     'temperature': pred_temp,
                     'humidity': last_row['humidity'],
                     'pressure': last_row['pressure']
                 }
+                
+                # Append new prediction to history_df for future steps (like backfill method)
+                new_row_df = pd.DataFrame([pred_row], index=[ts])
+                history_df = pd.concat([history_df, new_row_df])
+                history_df = history_df.sort_index()
+                
                 # Save this prediction immediately
                 single_pred_df = pd.DataFrame([{
                     'timestamp': ts,
@@ -207,6 +249,7 @@ class WeatherScheduler:
                 }]).set_index('timestamp')
                 self.data_processor.store_predictions(single_pred_df)
                 logger.info(f"Generated and stored 10-min prediction for {ts}")
+            
             self.backfill_predictions()
 
         except Exception as e:
@@ -217,7 +260,6 @@ class WeatherScheduler:
         try:
             logger.info(f"Starting model training job at {datetime.now()}")
             
-            # Check if we should retrain the model
             if not self.should_retrain_model():
                 logger.info("Model retraining not needed at this time")
                 return
@@ -261,14 +303,6 @@ class WeatherScheduler:
         """Run prediction job once"""
         self.prediction_job()
         
-    def run_once_training(self):
-        """Run training job once"""
-        self.training_job()
-        
-    def run_once_data_collection(self):
-        """Run data collection job once"""
-        self.data_collection_job()
-    
     def start(self):
         """Start the scheduler with separate jobs for different concerns"""
         if self.is_running:
@@ -288,7 +322,7 @@ class WeatherScheduler:
             # Prediction job - frequent (every prediction interval, offset by 2 minutes after data collection)
             self.scheduler.add_job(
                 func=self.prediction_job,
-                trigger=IntervalTrigger(minutes=self.config.PREDICTION_INTERVAL_MINUTES), # Run every 10 minutes
+                trigger=IntervalTrigger(minutes=self.config.PREDICTION_INTERVAL_MINUTES, start_date=(datetime.now() + timedelta(minutes=2))), # Offset by 2 minutes
                 id='prediction_generation',
                 name='Weather Prediction Generation',
                 replace_existing=True
@@ -316,7 +350,7 @@ class WeatherScheduler:
 
             logger.info(f"Scheduler started with separate jobs:")
             logger.info(f"- Data collection: every {self.config.PREDICTION_INTERVAL_MINUTES} minutes")
-            logger.info(f"- Predictions: every {self.config.PREDICTION_INTERVAL_MINUTES} minutes")
+            logger.info(f"- Predictions: every {self.config.PREDICTION_INTERVAL_MINUTES} minutes (offset by 2 minutes)")
             logger.info(f"- Training: daily at 2:00 AM")
             
         except Exception as e:
@@ -421,6 +455,7 @@ class WeatherScheduler:
                     continue
                 input_df = history_window.copy()
                 input_df.index.name = 'timestamp'
+                logger.debug(f"Backfill prediction input window for {ts}: shape={input_df.shape}, values=\n{input_df}")
                 pred_df = self.model_predictor.predict(input_df, forecast_periods=1)
                 if pred_df.empty:
                     logger.warning(f"No prediction generated for {ts}")

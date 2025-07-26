@@ -76,27 +76,34 @@
                     </div>
                 </div>
             </div>
-            <!-- Model Status Card -->
-            <div class="bg-gray-50 rounded-xl p-6 border-l-4 border-blue-500 transition-transform duration-300 hover:-translate-y-1 hover:shadow-lg">
-                <h3 class="text-gray-800 mb-4 text-xl font-semibold">Model Status</h3>
+            <!-- System Status Card -->
+            <div class="bg-gray-50 rounded-xl p-6 border-l-4 border-green-500 transition-transform duration-300 hover:-translate-y-1 hover:shadow-lg">
+                <h3 class="text-gray-800 mb-4 text-xl font-semibold">System Status</h3>
                 <div class="space-y-4">
                     <div>
-                        <div class="text-gray-600 text-sm uppercase tracking-wide">Model Trained</div>
-                        <div class="text-2xl font-bold text-blue-600 flex items-center">
-                            <span 
-                                class="w-3 h-3 rounded-full mr-2"
-                                :class="stats.model?.is_trained ? 'bg-green-500' : 'bg-red-500'"
-                            ></span>
-                            <span x-text="stats.model?.is_trained ? 'Yes' : 'No'"></span>
+                        <div class="text-gray-600 text-sm uppercase tracking-wide">Initialized</div>
+                        <div class="text-2xl font-bold text-green-600 flex items-center">
+                            <span class="w-3 h-3 rounded-full mr-2" :class="stats.is_initialized ? 'bg-green-500' : 'bg-red-500'"></span>
+                            <span x-text="stats.is_initialized ? 'Yes' : 'No'"></span>
                         </div>
                     </div>
                     <div>
-                        <div class="text-gray-600 text-sm uppercase tracking-wide">Model Path</div>
-                        <div class="text-2xl font-bold text-blue-600" x-text="stats.model?.model_path || 'N/A'"></div>
+                        <div class="text-gray-600 text-sm uppercase tracking-wide">Scheduler Running</div>
+                        <div class="text-2xl font-bold text-green-600 flex items-center">
+                            <span class="w-3 h-3 rounded-full mr-2" :class="stats.is_running ? 'bg-green-500' : 'bg-red-500'"></span>
+                            <span x-text="stats.is_running ? 'Yes' : 'No'"></span>
+                        </div>
                     </div>
                     <div>
-                        <div class="text-gray-600 text-sm uppercase tracking-wide">Scheduler Interval</div>
-                        <div class="text-2xl font-bold text-blue-600" x-text="`${stats.scheduler?.interval_minutes || 'N/A'} minutes`"></div>
+                        <div class="text-gray-600 text-sm uppercase tracking-wide">Model Trained</div>
+                        <div class="text-2xl font-bold text-green-600 flex items-center">
+                            <span class="w-3 h-3 rounded-full mr-2" :class="stats.model_trained ? 'bg-green-500' : 'bg-red-500'"></span>
+                            <span x-text="stats.model_trained ? 'Yes' : 'No'"></span>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-gray-600 text-sm uppercase tracking-wide">Last Export Time</div>
+                        <div class="text-2xl font-bold text-green-600" x-text="stats.last_export_time || 'N/A'"></div>
                     </div>
                 </div>
             </div>

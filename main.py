@@ -2,6 +2,7 @@ import uvicorn
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+import os
 
 from api import app
 from scheduler import start_scheduler, stop_scheduler, create_scheduler
@@ -10,8 +11,9 @@ from weather_data_controller import WeatherDataController
 from model_predictor import ModelPredictor
 
 # Configure logging
+log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, log_level, logging.INFO),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
