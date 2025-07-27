@@ -29,6 +29,149 @@
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
+/* Gradient background */
+.gradient-bg {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* Status indicators */
+.status-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 8px;
+    position: relative;
+}
+
+.status-green { 
+    background-color: #10B981; 
+}
+
+.status-red { 
+    background-color: #EF4444; 
+}
+
+.status-gray { 
+    background-color: #6B7280; 
+}
+
+.status-dot.status-green::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 50%;
+    background: inherit;
+    animation: ripple 2s infinite;
+}
+
+@keyframes ripple {
+    0% {
+        transform: scale(1);
+        opacity: 0.8;
+    }
+    100% {
+        transform: scale(2);
+        opacity: 0;
+    }
+}
+
+/* Loading animations */
+.loading-skeleton {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: loading 1.5s infinite;
+    position: relative;
+    overflow: hidden;
+}
+
+.loading-skeleton::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes loading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+@keyframes shimmer {
+    0% {
+        left: -100%;
+    }
+    100% {
+        left: 100%;
+    }
+}
+
+/* Chart container enhancements */
+.chart-container {
+    position: relative;
+    height: 400px;
+    width: 100%;
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Button animations */
+.refresh-button {
+    transition: all 0.2s ease;
+}
+
+.refresh-button:hover {
+    transform: rotate(180deg);
+}
+
+/* Metric cards */
+.metric-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.metric-value {
+    font-size: 2rem;
+    font-weight: bold;
+}
+
+.metric-label {
+    font-size: 0.875rem;
+    opacity: 0.9;
+}
+
+/* Prediction confidence indicators */
+.prediction-confidence {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.confidence-high { 
+    background-color: #10B981; 
+    color: white; 
+}
+
+.confidence-medium { 
+    background-color: #F59E0B; 
+    color: white; 
+}
+
+.confidence-low { 
+    background-color: #EF4444; 
+    color: white; 
+}
+
 /* Pulse animation for real-time indicators */
 .pulse-indicator {
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
@@ -60,68 +203,6 @@
 .btn-primary:hover {
     transform: translateY(-1px);
     box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
-}
-
-/* Status indicator animations */
-.status-dot {
-    position: relative;
-}
-
-.status-dot.status-green::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    border-radius: 50%;
-    background: inherit;
-    animation: ripple 2s infinite;
-}
-
-@keyframes ripple {
-    0% {
-        transform: scale(1);
-        opacity: 0.8;
-    }
-    100% {
-        transform: scale(2);
-        opacity: 0;
-    }
-}
-
-/* Chart container enhancements */
-.chart-container {
-    background: white;
-    border-radius: 12px;
-    padding: 16px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-}
-
-/* Loading state improvements */
-.loading-skeleton {
-    position: relative;
-    overflow: hidden;
-}
-
-.loading-skeleton::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-    animation: shimmer 1.5s infinite;
-}
-
-@keyframes shimmer {
-    0% {
-        left: -100%;
-    }
-    100% {
-        left: 100%;
-    }
 }
 
 /* Responsive improvements */

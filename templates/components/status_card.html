@@ -1,0 +1,17 @@
+{# Status Card Component - Usage: {% include 'components/status_card.html' with context %} #}
+{# Parameters: label, status_key, type, true_text, false_text, icon #}
+<div class="bg-white rounded-xl p-6 card-hover shadow-sm">
+    <div class="flex items-center justify-between">
+        <div>
+            <p class="text-sm font-medium text-gray-600">{{ label }}</p>
+            <div class="flex items-center mt-2" x-show="{{ type }} === 'status'">
+                <span class="status-dot" :class="getStatusClass(systemStatus.{{ status_key }})"></span>
+                <span class="text-sm font-semibold" x-text="systemStatus.{{ status_key }} ? '{{ true_text }}' : '{{ false_text }}'"></span>
+            </div>
+            <div class="mt-2" x-show="{{ type }} === 'count'">
+                <span class="text-lg font-bold text-gray-900" x-text="systemStatus.{{ status_key }} || 0"></span>
+            </div>
+        </div>
+        <div class="text-2xl">{{ icon }}</div>
+    </div>
+</div> 

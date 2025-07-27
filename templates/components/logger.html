@@ -1,0 +1,85 @@
+{# Logger Component - Include with: {% include 'components/logger.html' with context %} #}
+<script>
+// Global logger configuration - will be set by the main template
+window.LoggerConfig = {
+    enabled: true,
+    level: 'info',
+    verbose: false
+};
+
+// Logger levels
+const LOG_LEVELS = {
+    error: 0,
+    warn: 1,
+    info: 2,
+    debug: 3
+};
+
+// Logger class
+class Logger {
+    constructor(component = 'Dashboard') {
+        this.component = component;
+        this.enabled = window.LoggerConfig.enabled;
+        this.level = LOG_LEVELS[window.LoggerConfig.level] || LOG_LEVELS.info;
+        this.verbose = window.LoggerConfig.verbose;
+    }
+
+    shouldLog(level) {
+        return this.enabled && level <= this.level;
+    }
+
+    formatMessage(level, message, data = null) {
+        const timestamp = new Date().toISOString();
+        const prefix = `[${timestamp}] [${level.toUpperCase()}] [${this.component}]`;
+        
+        if (data && this.verbose) {
+            return `${prefix}: ${message}`, data;
+        }
+        return `${prefix}: ${message}`;
+    }
+
+    error(message, data = null) {
+        if (this.shouldLog(LOG_LEVELS.error)) {
+            console.error(this.formatMessage('error', message, data));
+        }
+    }
+
+    warn(message, data = null) {
+        if (this.shouldLog(LOG_LEVELS.warn)) {
+            console.warn(this.formatMessage('warn', message, data));
+        }
+    }
+
+    info(message, data = null) {
+        if (this.shouldLog(LOG_LEVELS.info)) {
+            console.info(this.formatMessage('info', message, data));
+        }
+    }
+
+    debug(message, data = null) {
+        if (this.shouldLog(LOG_LEVELS.debug)) {
+            console.debug(this.formatMessage('debug', message, data));
+        }
+    }
+
+    // Quick methods for common operations
+    logInit() {
+        this.info('Initializing component');
+    }
+
+    logError(error, context = '') {
+        this.error(`${context} ${error.message || error}`, { error, context });
+    }
+
+    logData(data, context = '') {
+        if (this.verbose) {
+            this.debug(`${context} data loaded`, data);
+        } else {
+            this.info(`${context} data loaded (${Array.isArray(data) ? data.length : 'object'})`);
+        }
+    }
+}
+
+// Global logger instance
+window.logger = new Logger();
+</script> 

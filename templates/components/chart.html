@@ -1,0 +1,12 @@
+{# Chart Component - Usage: {% include 'components/chart.html' with context %} #}
+{# Parameters: chart_id, title, height, disabled_message #}
+<div class="bg-gray-50 rounded-lg p-4">
+    <h3 class="text-lg font-semibold text-gray-900 mb-3">{{ title | default('Chart') }}</h3>
+    <div class="chart-container" style="height: {{ height | default('300px') }};">
+        <div id="{{ chart_id }}"></div>
+        <div x-show="chartsDisabled" class="text-center py-8 text-gray-500">
+            <div class="text-2xl mb-2">{{ icon | default('📊') }}</div>
+            <p>{{ disabled_message | default('Chart temporarily disabled') }}</p>
+        </div>
+    </div>
+</div> 
