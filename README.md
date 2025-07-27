@@ -4,6 +4,8 @@ A simple weather forecasting API that automatically generates predictions every 
 
 ## Features
 
+- **48-Hour Forecasting**: Predictions generated for up to 48 hours ahead with 10-minute intervals
+- **Dynamic Confidence**: Real-time confidence calculation based on model uncertainty, data quality, and forecast horizon
 - **Automated Forecasting**: Predictions generated every 10 minutes via scheduled background task
 - **Simple API**: Clean, minimal endpoints for predictions and statistics
 - **Real-time Stats**: Web-based dashboard for monitoring system status
@@ -33,7 +35,7 @@ A simple weather forecasting API that automatically generates predictions every 
 ### Core Endpoints
 
 - `GET /` - API information and available endpoints
-- `GET /predictions?hours=24` - Get latest predictions from database
+- `GET /predictions?hours=48` - Get latest predictions from database (default: 48 hours)
 - `GET /next-forecast` - Get the most recent prediction (next forecast)
 - `GET /stats` - System statistics (JSON)
 - `GET /stats-page` - Web-based statistics dashboard
@@ -41,7 +43,10 @@ A simple weather forecasting API that automatically generates predictions every 
 ### Example Usage
 
 ```bash
-# Get latest predictions for the last 24 hours
+# Get latest predictions for the last 48 hours (default)
+curl http://localhost:8000/predictions?hours=48
+
+# Get predictions for the last 24 hours
 curl http://localhost:8000/predictions?hours=24
 
 # Get the next forecast (most recent prediction)
@@ -54,19 +59,36 @@ curl http://localhost:8000/stats
 # Open http://localhost:8000/stats-page in your browser
 ```
 
+## Prediction Features
+
+### 48-Hour Forecast Horizon
+The system now generates predictions for up to 48 hours ahead with 10-minute intervals (288 predictions total). This provides much more comprehensive forecasting capability compared to the previous 1-hour limit.
+
+### Dynamic Confidence Calculation
+Predictions now include meaningful confidence scores based on:
+
+1. **Model Uncertainty**: Uses dropout during inference to estimate prediction variance
+2. **Data Quality**: Considers data recency and consistency
+3. **Forecast Horizon**: Confidence naturally decreases for predictions further in the future
+
+Confidence values range from 0.1 to 0.95, where:
+- **High (≥0.7)**: Very confident predictions
+- **Medium (0.5-0.7)**: Moderately confident predictions  
+- **Low (<0.5)**: Less confident predictions
+
 ## System Architecture
 
 ### Data Flow
 
 ```
-Sensor Data (Source MySQL DB) → Scheduled Export (every 10 min) → ML Model → Predictions → API MySQL DB
+Sensor Data (Source MySQL DB) → Scheduled Export (every 10 min) → ML Model → 48-Hour Predictions → API MySQL DB
 ```
 
 ### Components
 
-- **Scheduler**: Runs every 10 minutes to generate new predictions
+- **Scheduler**: Runs every 10 minutes to generate new 48-hour predictions
 - **Data Processor**: Handles data export, preprocessing, and database operations
-- **Model Predictor**: ML model for temperature forecasting
+- **Model Predictor**: ML model with confidence calculation for temperature forecasting
 - **API**: FastAPI server with minimal endpoints
 - **Stats Dashboard**: Real-time web interface for monitoring
 
@@ -112,59 +134,31 @@ CREATE TABLE predictions (
 
 ## Model Training
 
-The model is automatically trained on startup using available historical data. The training process:
+The system uses an LSTM neural network for temperature prediction. The model is automatically retrained when:
 
-1. Exports all available sensor data
-2. Preprocesses data (resampling, feature engineering)
-3. Trains a neural network model
-4. Saves the trained model for future predictions
+- New data accumulates (every 24 hours of new data)
+- Model performance degrades
+- System detects significant data distribution changes
 
-## Monitoring
+### Confidence Calculation
 
-### Web Dashboard
-Visit `http://localhost:8000/stats-page` for a real-time dashboard showing:
-- Database statistics
-- Model status
-- Scheduler information
-- System health
+The confidence calculation uses multiple factors:
 
-### API Statistics
-Use `GET /stats` for programmatic access to system statistics.
+1. **Model Uncertainty**: Multiple forward passes with dropout to estimate prediction variance
+2. **Data Recency**: Confidence decreases if input data is old (>24 hours)
+3. **Data Consistency**: Confidence decreases with high variance in recent temperature values
+4. **Forecast Horizon**: Confidence naturally decreases for predictions further in the future
 
-## Development
+## Testing
 
-### Running in Development Mode
+Run the test script to verify 48-hour predictions and confidence calculation:
+
 ```bash
-# Enable auto-reload
-export API_RELOAD=true
-python main.py
+python test_predictions.py
 ```
 
-### Testing
-```bash
-# Test model loading
-python test_model_loading.py
-
-# Test training
-python test_training.py
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Database Connection Errors**: Check your database configuration in `config.env`
-2. **No Predictions**: Ensure the model is trained and sensor data is available
-3. **Scheduler Not Running**: Check logs for scheduler startup messages
-
-### Logs
-The application logs important events including:
-- Scheduler start/stop
-- Data export operations
-- Model training progress
-- Prediction generation
-- Database operations
-
-## License
-
-This project is licensed under the MIT License. 
+This will test:
+- 48-hour prediction generation
+- Confidence calculation accuracy
+- Data quality assessment
+- Forecast horizon effects 
