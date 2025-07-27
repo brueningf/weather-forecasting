@@ -102,7 +102,10 @@ class SystemStatusResponse(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Main dashboard with all features and analysis"""
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "config": config
+    })
 
 @app.get("/api/predictions", response_model=List[PredictionResponse])
 async def get_predictions(hours: int = 24):
