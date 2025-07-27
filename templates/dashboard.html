@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Weather Forecasting Dashboard{% endblock %}
+{% block title %}Weather Forecasting{% endblock %}
 {% block head %}
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <link rel="stylesheet" href="/static/dashboard.css">
@@ -74,45 +74,7 @@
         <!-- Real-Time Weather Monitoring -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
             <!-- Current Conditions -->
-            <div class="bg-white rounded-xl p-6 card-hover shadow-sm">
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-semibold text-gray-900">🌡️ Current Conditions</h2>
-                    <div class="text-sm text-gray-500" x-text="'Updated: ' + lastUpdateTime"></div>
-                </div>
-                
-                <div class="grid grid-cols-3 gap-4">
-                    <div class="text-center">
-                        <div class="text-3xl font-bold text-red-600" x-text="currentWeather.temperature ? currentWeather.temperature.toFixed(1) + '°C' : '--'"></div>
-                        <div class="text-sm text-gray-600">Temperature</div>
-                    </div>
-                    <div class="text-center">
-                        <div class="text-3xl font-bold text-blue-600" x-text="currentWeather.humidity ? currentWeather.humidity.toFixed(1) + '%' : '--'"></div>
-                        <div class="text-sm text-gray-600">Humidity</div>
-                    </div>
-                    <div class="text-center">
-                        <div class="text-3xl font-bold text-green-600" x-text="currentWeather.pressure ? currentWeather.pressure.toFixed(1) + 'hPa' : '--'"></div>
-                        <div class="text-sm text-gray-600">Pressure</div>
-                    </div>
-                </div>
-                
-                <!-- Last Predicted Temperature -->
-                <div class="mt-4 p-3 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-200">
-                    <div class="text-center">
-                        <div class="text-2xl font-bold text-purple-700" x-text="lastPredictedTemp ? lastPredictedTemp.toFixed(1) + '°C' : '--'"></div>
-                        <div class="text-sm text-purple-600">Last Predicted Temperature</div>
-                        <div class="text-xs text-purple-500 mt-1" x-text="lastPredictedTempTime ? 'Predicted at: ' + formatDateTime(lastPredictedTempTime) : ''"></div>
-                    </div>
-                </div>
-                
-                <div class="mt-4 p-3 bg-gray-50 rounded-lg">
-                    <div class="text-sm text-gray-600">
-                        <strong>Module:</strong> <span x-text="currentWeather.module || 'Unknown'"></span>
-                    </div>
-                    <div class="text-sm text-gray-600">
-                        <strong>Timestamp:</strong> <span x-text="currentWeather.timestamp || '--'"></span>
-                    </div>
-                </div>
-            </div>
+            {% include 'components/current_conditions.html' with context %}
 
             <!-- Model Performance -->
             <div class="bg-white rounded-xl p-6 card-hover shadow-sm">
@@ -145,6 +107,25 @@
         <!-- Controls Section -->
         <div class="bg-white rounded-xl p-6 mb-8 shadow-sm">
             <h2 class="text-lg font-semibold text-gray-900 mb-4">📋 Controls & Filters</h2>
+            
+            <!-- Data Quality Indicator -->
+            <div x-show="controls.dataType === 'source' && sensorData.length > 0" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div class="flex items-center">
+                    <span class="text-blue-600 mr-2">ℹ️</span>
+                    <div class="text-sm text-blue-800">
+                        <div class="font-medium">Raw Source Data Info:</div>
+                        <div x-show="sensorData.length > 0">
+                            <span x-text="getRawSourceDataQualityText()"></span>
+                            <span x-show="controls.selectedModule" x-text="` from module ${controls.selectedModule}`"></span>
+                            <span x-show="!controls.selectedModule" x-text="` from all modules`"></span>
+                        </div>
+                        <div x-show="getRawSourceDataQuality() && getRawSourceDataQuality().quality === 'poor'" class="text-xs text-orange-600 mt-1">
+                            ⚠️ Data distribution may be uneven - consider selecting a specific module or using preprocessed data
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Time Range</label>
@@ -155,8 +136,8 @@
                     </select>
                 </div>
                 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Sensor Module</label>
+                <div x-show="controls.dataType === 'source'">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Module</label>
                     <select x-model="controls.selectedModule" @change="updateData()" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                         <option value="">All Modules</option>
                         <template x-for="module in availableModules" :key="module">
@@ -261,16 +242,16 @@
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Historical Time Range</label>
-                    <select x-model="historicalControls.timeRange" @change="updateHistoricalData()" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <select x-model="historicalControls.timeRange" @change="loadSensorData('historical')" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                         <template x-for="option in timeRangeOptions" :key="option.value">
                             <option :value="option.value" x-text="option.label"></option>
                         </template>
                     </select>
                 </div>
                 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Historical Module</label>
-                    <select x-model="historicalControls.selectedModule" @change="updateHistoricalData()" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <div x-show="historicalControls.dataType === 'source'">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Module</label>
+                    <select x-model="historicalControls.selectedModule" @change="loadSensorData('historical')" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                         <option value="">All Modules</option>
                         <template x-for="module in availableModules" :key="module">
                             <option :value="module" x-text="module"></option>
@@ -280,19 +261,37 @@
                 
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Historical Data Type</label>
-                    <select x-model="historicalControls.dataType" @change="updateHistoricalData()" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <select x-model="historicalControls.dataType" @change="loadSensorData('historical')" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                         <option value="preprocessed">Preprocessed</option>
                         <option value="source">Raw Source</option>
                     </select>
                 </div>
                 
                 <div class="flex items-end">
-                    <button @click="refreshHistoricalData()" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
+                    <button @click="loadSensorData('historical')" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
                         🔄 Refresh Historical
                     </button>
                 </div>
             </div>
             
+            <!-- Historical Data Quality Indicator -->
+            <div x-show="historicalControls.dataType === 'source' && sensorData.length > 0" class="mb-6 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div class="flex items-center">
+                    <span class="text-blue-600 mr-2">ℹ️</span>
+                    <div class="text-sm text-blue-800">
+                        <div class="font-medium">Historical Raw Source Data Info:</div>
+                        <div x-show="sensorData.length > 0">
+                            <span x-text="getHistoricalDataQualityText()"></span>
+                            <span x-show="historicalControls.selectedModule" x-text="` from module ${historicalControls.selectedModule}`"></span>
+                            <span x-show="!historicalControls.selectedModule" x-text="` from all modules`"></span>
+                        </div>
+                        <div x-show="getHistoricalDataQuality() && getHistoricalDataQuality().quality === 'poor'" class="text-xs text-orange-600 mt-1">
+                            ⚠️ Data distribution may be uneven - consider selecting a specific module or using preprocessed data
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Individual Historical Charts -->
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <template x-for="chart in historicalCharts" :key="chart.id">
@@ -347,6 +346,8 @@ function dashboardApp() {
         
         // Data
         currentWeather: {},
+        currentWeatherLoading: false,
+        currentWeatherError: null,
         systemStatus: {
             sourceDb: false,
             scheduler: false,
@@ -367,14 +368,14 @@ function dashboardApp() {
         
         // Controls
         controls: {
-            timeRange: '168',
+            timeRange: '48',  // Changed from '6' to '48'
             selectedModule: '',
             dataType: 'preprocessed'
         },
         
         // Historical Data Controls
         historicalControls: {
-            timeRange: '168',
+            timeRange: '48',  // Changed from '6' to '48'
             selectedModule: '',
             dataType: 'preprocessed'
         },
@@ -425,6 +426,30 @@ function dashboardApp() {
         
         // Methods
         async init() {
+            // Set up watchers to sync controls
+            this.$watch('controls.timeRange', (value) => {
+                this.historicalControls.timeRange = value;
+            });
+            
+            this.$watch('controls.dataType', (value) => {
+                this.historicalControls.dataType = value;
+            });
+            
+            this.$watch('controls.selectedModule', (value) => {
+                this.historicalControls.selectedModule = value;
+            });
+            
+            this.$watch('historicalControls.timeRange', (value) => {
+                this.controls.timeRange = value;
+            });
+            
+            this.$watch('historicalControls.dataType', (value) => {
+                this.controls.dataType = value;
+            });
+            
+            this.$watch('historicalControls.selectedModule', (value) => {
+                this.controls.selectedModule = value;
+            });
             try {
                 this.isLoading = true;
                 this.hasError = false;
@@ -450,12 +475,7 @@ function dashboardApp() {
                 // Wait for DOM to be ready
                 await new Promise(resolve => setTimeout(resolve, 100));
                 
-                // Check if chart containers exist
-                const containers = ['predictionsChart', 'temperatureChart', 'humidityChart', 'pressureChart'];
-                const containerStatus = {};
-                containers.forEach(id => containerStatus[id] = !!document.getElementById(id));
                 
-                window.logger.logData(containerStatus, 'Chart containers found');
                 
                 // Set up charts first
                 this.setupCharts();
@@ -482,10 +502,39 @@ function dashboardApp() {
                 this.loadSystemStatus(),
                 this.loadCurrentWeather(),
                 this.loadModelMetrics(),
-                this.loadPredictions(),
-                this.loadSensorData(),
                 this.loadModules()
             ]);
+            
+            // Load sensor data and predictions, then update charts
+            await this.loadSensorData();
+            await this.loadSensorData('historical'); // Also load historical data
+            await this.loadPredictions();
+            
+            // Update charts after data is loaded
+            if (this.sensorData.length > 0 && !this.chartsDisabled) {
+                if (this.temperatureChart) {
+                    try {
+                        this.updateChart('Temperature');
+                    } catch (error) {
+                        console.error('Failed to update temperature chart:', error);
+                    }
+                }
+                if (this.humidityChart) {
+                    try {
+                        this.updateChart('Humidity');
+                    } catch (error) {
+                        console.error('Failed to update humidity chart:', error);
+                    }
+                }
+                if (this.pressureChart) {
+                    try {
+                        this.updateChart('Pressure');
+                    } catch (error) {
+                        console.error('Failed to update pressure chart:', error);
+                    }
+                }
+            }
+            
             this.updateLastUpdateTime();
         },
         
@@ -519,6 +568,9 @@ function dashboardApp() {
         
         async loadCurrentWeather() {
             try {
+                this.currentWeatherLoading = true;
+                this.currentWeatherError = null;
+                
                 // Try preprocessed data first
                 let response = await fetch('/api/preprocessed-data?hours_back=1&limit=1');
                 let data = await response.json();
@@ -528,8 +580,10 @@ function dashboardApp() {
                         temperature: data[0].temperature,
                         humidity: data[0].humidity,
                         pressure: data[0].pressure,
-                        module: 'preprocessed', // Preprocessed data doesn't have module info
-                        timestamp: new Date(data[0].timestamp).toLocaleString()
+                        module: 'preprocessed',
+                        dataSource: 'preprocessed',
+                        timestamp: new Date(data[0].timestamp).toLocaleString(),
+                        rawTimestamp: data[0].timestamp
                     };
                 } else {
                     // Fallback to source data
@@ -541,12 +595,26 @@ function dashboardApp() {
                             humidity: data[0].humidity,
                             pressure: data[0].pressure,
                             module: data[0].module,
-                            timestamp: new Date(data[0].timestamp).toLocaleString()
+                            dataSource: 'source',
+                            timestamp: new Date(data[0].timestamp).toLocaleString(),
+                            rawTimestamp: data[0].timestamp
                         };
+                    } else {
+                        // No data available, but don't show as error - just leave empty
+                        this.currentWeather = {};
                     }
                 }
+                
+                // Calculate trends if we have historical data
+                if (this.sensorData && this.sensorData.length > 1) {
+                    this.calculateWeatherTrends();
+                }
+                
             } catch (error) {
                 window.logger.logError(error, 'Error loading current weather');
+                this.currentWeatherError = 'Failed to load weather data';
+            } finally {
+                this.currentWeatherLoading = false;
             }
         },
         
@@ -590,10 +658,12 @@ function dashboardApp() {
                 }
                 this.recentPredictions = sortedData;
                 
-                // Set last predicted temperature and time
+                // Set last predicted temperature and time (use the most recent prediction)
                 if (this.recentPredictions.length > 0) {
-                    this.lastPredictedTemp = this.recentPredictions[0].predicted_temperature;
-                    this.lastPredictedTempTime = this.recentPredictions[0].timestamp;
+                    // Get the most recent prediction (last in the array since it's sorted by timestamp)
+                    const latestPrediction = this.recentPredictions[this.recentPredictions.length - 1];
+                    this.lastPredictedTemp = latestPrediction.predicted_temperature;
+                    this.lastPredictedTempTime = latestPrediction.timestamp;
                 } else {
                     this.lastPredictedTemp = null;
                     this.lastPredictedTempTime = null;
@@ -609,21 +679,22 @@ function dashboardApp() {
             }
         },
         
-        async loadSensorData() {
+        async loadSensorData(controlSet = 'controls') {
             try {
-                window.logger.debug('Loading sensor data with controls:', this.historicalControls);
+                const controls = controlSet === 'historical' ? this.historicalControls : this.controls;
+                window.logger.debug(`Loading sensor data with ${controlSet}:`, controls);
                 
-                const moduleParam = this.historicalControls.selectedModule ? `&module_id=${this.historicalControls.selectedModule}` : '';
+                const moduleParam = controls.selectedModule ? `&module_id=${controls.selectedModule}` : '';
                 
                 let response;
                 let url;
-                if (this.historicalControls.dataType === 'preprocessed') {
+                if (controls.dataType === 'preprocessed') {
                     // Use preprocessed data endpoint
-                    url = `/api/preprocessed-data?hours_back=${this.historicalControls.timeRange}${moduleParam}`;
+                    url = `/api/preprocessed-data?hours_back=${controls.timeRange}${moduleParam}`;
                     response = await fetch(url);
                 } else {
                     // Use source data endpoint
-                    url = `/api/sensor-data?hours=${this.historicalControls.timeRange}${moduleParam}`;
+                    url = `/api/sensor-data?hours=${controls.timeRange}${moduleParam}`;
                     response = await fetch(url);
                 }
                 
@@ -641,7 +712,44 @@ function dashboardApp() {
                 const sortedData = Array.isArray(data) ? data.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)) : [];
                 
                 if (sortedData.length > 0) {
-                    window.logger.debug('Time range:', new Date(sortedData[0].timestamp), 'to', new Date(sortedData[sortedData.length - 1].timestamp));
+                    const startTime = new Date(sortedData[0].timestamp);
+                    const endTime = new Date(sortedData[sortedData.length - 1].timestamp);
+                    window.logger.debug('Time range:', startTime, 'to', endTime);
+                    
+                    // Additional debugging for raw source data
+                    if (controls.dataType === 'source') {
+                        const timeSpan = (endTime - startTime) / (1000 * 60 * 60); // hours
+                        const avgInterval = timeSpan / (sortedData.length - 1); // hours between points
+                        window.logger.debug(`Raw source data: ${sortedData.length} points over ${timeSpan.toFixed(1)} hours (avg interval: ${avgInterval.toFixed(2)} hours)`);
+                        
+                        // Check for data gaps
+                        const gaps = [];
+                        for (let i = 1; i < sortedData.length; i++) {
+                            const prevTime = new Date(sortedData[i-1].timestamp);
+                            const currTime = new Date(sortedData[i].timestamp);
+                            const gap = (currTime - prevTime) / (1000 * 60 * 60); // hours
+                            if (gap > 2) { // Gap larger than 2 hours
+                                gaps.push({
+                                    from: prevTime,
+                                    to: currTime,
+                                    gap: gap
+                                });
+                            }
+                        }
+                        if (gaps.length > 0) {
+                            window.logger.warn(`Found ${gaps.length} data gaps in raw source data:`, gaps);
+                        }
+                        
+                        // Log module distribution if no specific module selected
+                        if (!controls.selectedModule) {
+                            const moduleCounts = {};
+                            sortedData.forEach(item => {
+                                const module = item.module || 'unknown';
+                                moduleCounts[module] = (moduleCounts[module] || 0) + 1;
+                            });
+                            window.logger.debug('Module distribution:', moduleCounts);
+                        }
+                    }
                 }
                 this.sensorData = sortedData;
                 
@@ -650,27 +758,30 @@ function dashboardApp() {
                     window.logger.debug('Updating individual charts with', this.sensorData.length, 'data points');
                     if (this.temperatureChart) {
                         try {
-                            this.updateTemperatureChart();
+                            this.updateChart('Temperature');
                         } catch (error) {
                             console.error('Failed to update temperature chart:', error);
                         }
                     }
                     if (this.humidityChart) {
                         try {
-                            this.updateHumidityChart();
+                            this.updateChart('Humidity');
                         } catch (error) {
                             console.error('Failed to update humidity chart:', error);
                         }
                     }
                     if (this.pressureChart) {
                         try {
-                            this.updatePressureChart();
+                            this.updateChart('Pressure');
                         } catch (error) {
                             console.error('Failed to update pressure chart:', error);
                         }
                     }
-                } else {
-                    window.logger.debug('Charts not updated - data length:', this.sensorData.length, 'charts disabled:', this.chartsDisabled);
+                }
+                
+                // Calculate weather trends for current conditions
+                if (this.sensorData.length > 1 && this.currentWeather.temperature) {
+                    this.calculateWeatherTrends();
                 }
             } catch (error) {
                 window.logger.logError(error, 'Error loading sensor data');
@@ -705,6 +816,14 @@ function dashboardApp() {
             }
             
             window.logger.info('Plotly is available, proceeding with chart setup');
+            
+            // Define config for all charts
+            const config = {
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+                displaylogo: false
+            };
             
             // Predictions Chart
             const predictionsCtx = document.getElementById('predictionsChart');
@@ -743,7 +862,8 @@ function dashboardApp() {
                         name: 'Predicted Temperature',
                         line: {
                             color: 'rgb(239, 68, 68)',
-                            width: 2
+                            width: 2,
+                            dash: 'dash'
                         },
                         marker: {
                             size: 4,
@@ -791,13 +911,6 @@ function dashboardApp() {
                     paper_bgcolor: 'rgba(255,255,255,0.9)'
                 };
                 
-                const config = {
-                    responsive: true,
-                    displayModeBar: true,
-                    modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
-                    displaylogo: false
-                };
-                
                 window.logger.debug('Creating predictions chart with data:', predictionsData);
                 window.logger.debug('Layout:', predictionsLayout);
                 
@@ -813,14 +926,12 @@ function dashboardApp() {
                 this.disablePredictionsChart();
             }
             
-            // Temperature Chart
+                        // Temperature Chart
             const temperatureCtx = document.getElementById('temperatureChart');
             if (!temperatureCtx) {
                 console.error('Temperature chart canvas not found');
                 return;
             }
-            
-            console.log('Temperature chart container found:', temperatureCtx);
             
             try {
                 const temperatureData = [
@@ -873,35 +984,19 @@ function dashboardApp() {
                     paper_bgcolor: 'rgba(255,255,255,0.9)'
                 };
                 
-                console.log('Creating temperature chart with data:', temperatureData);
-                console.log('Temperature layout:', temperatureLayout);
-                
                 Plotly.newPlot(temperatureCtx, temperatureData, temperatureLayout, config);
                 this.temperatureChart = temperatureCtx;
-                console.log('Temperature chart initialized successfully');
-                
-                // Test if the chart is actually rendered
-                setTimeout(() => {
-                    const chartElement = temperatureCtx.querySelector('.plotly');
-                    if (chartElement) {
-                        console.log('Temperature chart element found and rendered:', chartElement);
-                    } else {
-                        console.warn('Temperature chart element not found after initialization');
-                    }
-                }, 1000);
             } catch (error) {
                 console.error('Error creating temperature chart:', error);
                 this.temperatureChart = null;
             }
             
-            // Humidity Chart
+                        // Humidity Chart
             const humidityCtx = document.getElementById('humidityChart');
             if (!humidityCtx) {
                 console.error('Humidity chart canvas not found');
                 return;
             }
-            
-            console.log('Humidity chart container found:', humidityCtx);
             
             try {
                 const humidityData = [
@@ -956,20 +1051,17 @@ function dashboardApp() {
                 
                 Plotly.newPlot(humidityCtx, humidityData, humidityLayout, config);
                 this.humidityChart = humidityCtx;
-                console.log('Humidity chart initialized successfully');
             } catch (error) {
                 console.error('Error creating humidity chart:', error);
                 this.humidityChart = null;
             }
             
-            // Pressure Chart
+                        // Pressure Chart
             const pressureCtx = document.getElementById('pressureChart');
             if (!pressureCtx) {
                 console.error('Pressure chart canvas not found');
                 return;
             }
-            
-            console.log('Pressure chart container found:', pressureCtx);
             
             try {
                 const pressureData = [
@@ -1024,7 +1116,6 @@ function dashboardApp() {
                 
                 Plotly.newPlot(pressureCtx, pressureData, pressureLayout, config);
                 this.pressureChart = pressureCtx;
-                console.log('Pressure chart initialized successfully');
             } catch (error) {
                 console.error('Error creating pressure chart:', error);
                 this.pressureChart = null;
@@ -1042,11 +1133,6 @@ function dashboardApp() {
                 const historicalData = this.sensorData && this.sensorData.length > 0 ? this.sensorData : [];
                 const predictionData = this.recentPredictions && this.recentPredictions.length > 0 ? this.recentPredictions : [];
                 
-                console.log('Historical data for chart:', historicalData.length, 'points');
-                console.log('Prediction data for chart:', predictionData.length, 'points');
-                console.log('Sample historical data:', historicalData.slice(0, 3));
-                console.log('Sample prediction data:', predictionData.slice(0, 3));
-                
                 // Create data arrays for Plotly with proper timestamp handling
                 const historicalX = historicalData.map(d => new Date(d.timestamp));
                 const historicalY = historicalData.map(d => Number(d.temperature) || 0);
@@ -1054,13 +1140,35 @@ function dashboardApp() {
                 const predictionX = predictionData.map(d => new Date(d.timestamp));
                 const predictionY = predictionData.map(d => Number(d.predicted_temperature) || 0);
                 
-                console.log('Historical X range:', historicalX.length > 0 ? `${historicalX[0]} to ${historicalX[historicalX.length-1]}` : 'empty');
-                console.log('Prediction X range:', predictionX.length > 0 ? `${predictionX[0]} to ${predictionX[predictionX.length-1]}` : 'empty');
-                
                 // If we have no data at all, don't update the chart
                 if (historicalX.length === 0 && predictionX.length === 0) {
                     console.warn('No data available for predictions chart');
                     return;
+                }
+                
+                // Additional debugging for raw source data
+                if (this.controls.dataType === 'source' && historicalData.length > 0) {
+                    const startTime = historicalX[0];
+                    const endTime = historicalX[historicalX.length - 1];
+                    const timeSpan = (endTime - startTime) / (1000 * 60 * 60); // hours
+                    const avgInterval = timeSpan / (historicalX.length - 1); // hours between points
+                    
+                    window.logger.debug(`Predictions chart - Raw source data: ${historicalX.length} points over ${timeSpan.toFixed(1)} hours (avg interval: ${avgInterval.toFixed(2)} hours)`);
+                    
+                    // Check for data quality issues
+                    if (avgInterval > 1) {
+                        window.logger.warn(`Large intervals detected in raw source data: ${avgInterval.toFixed(2)} hours average`);
+                    }
+                    
+                    // Log module information if available
+                    if (historicalData[0].module) {
+                        const moduleCounts = {};
+                        historicalData.forEach(item => {
+                            const module = item.module || 'unknown';
+                            moduleCounts[module] = (moduleCounts[module] || 0) + 1;
+                        });
+                        window.logger.debug('Predictions chart - Module distribution:', moduleCounts);
+                    }
                 }
                 
                 // Always use replot for better timestamp handling and to ensure proper updates
@@ -1100,7 +1208,8 @@ function dashboardApp() {
                         name: 'Predicted Temperature',
                         line: {
                             color: 'rgb(239, 68, 68)',
-                            width: 2
+                            width: 2,
+                            dash: 'dash'
                         },
                         marker: {
                             size: 4,
@@ -1156,7 +1265,7 @@ function dashboardApp() {
                 };
                 
                 Plotly.newPlot(this.predictionsChart, plotData, layout, config);
-                console.log('Predictions chart replotted successfully');
+
             } catch (error) {
                 console.error('Error replotting predictions chart:', error);
                 this.disablePredictionsChart();
@@ -1170,7 +1279,9 @@ function dashboardApp() {
                 return;
             }
             
-            const chartElement = this[chart.id.replace('Chart', 'Chart')];
+            // Get the correct chart element reference
+            const chartElement = this[chart.id];
+            
             if (this.chartsDisabled || !chartElement) {
                 window.logger.warn(`${chartType} chart not available or disabled`);
                 return;
@@ -1195,10 +1306,6 @@ function dashboardApp() {
                 window.logger.logError(error, `${chartType} chart update failed`);
                 this.disableChart(chart.id);
             }
-        },
-        
-        updateTemperatureChart() {
-            this.updateChart('Temperature');
         },
         
         replotChart(chart, x, values) {
@@ -1262,7 +1369,7 @@ function dashboardApp() {
                     displaylogo: false
                 };
                 
-                const chartElement = this[chart.id.replace('Chart', 'Chart')];
+                const chartElement = this[chart.id];
                 Plotly.newPlot(chartElement, plotData, layout, config);
                 window.logger.info(`${chart.name} chart replotted successfully`);
                 
@@ -1271,20 +1378,6 @@ function dashboardApp() {
                 this.disableChart(chart.id);
             }
         },
-        
-
-        
-        updateHumidityChart() {
-            this.updateChart('Humidity');
-        },
-        
-
-        
-        updatePressureChart() {
-            this.updateChart('Pressure');
-        },
-        
-
         
         disablePredictionsChart() {
             window.logger.warn('Disabling predictions chart due to errors');
@@ -1307,19 +1400,17 @@ function dashboardApp() {
             const chart = this.historicalCharts.find(c => c.id === chartId);
             if (chart) {
                 window.logger.warn(`Disabling ${chart.name} chart due to errors`);
-                const chartElement = this[chartId.replace('Chart', 'Chart')];
+                const chartElement = this[chartId];
                 if (chartElement) {
                     try {
                         Plotly.purge(chartElement);
                     } catch (e) {
                         window.logger.logError(e, `Error purging ${chart.name} chart`);
                     }
-                    this[chartId.replace('Chart', 'Chart')] = null;
+                    this[chartId] = null;
                 }
             }
         },
-        
-
         
         async updateData() {
             await this.loadSensorData();
@@ -1330,21 +1421,21 @@ function dashboardApp() {
             if (this.sensorData.length > 0 && !this.chartsDisabled) {
                 if (this.temperatureChart) {
                     try {
-                        this.updateTemperatureChart();
+                        this.updateChart('Temperature');
                     } catch (error) {
                         console.error('Failed to update temperature chart:', error);
                     }
                 }
                 if (this.humidityChart) {
                     try {
-                        this.updateHumidityChart();
+                        this.updateChart('Humidity');
                     } catch (error) {
                         console.error('Failed to update humidity chart:', error);
                     }
                 }
                 if (this.pressureChart) {
                     try {
-                        this.updatePressureChart();
+                        this.updateChart('Pressure');
                     } catch (error) {
                         console.error('Failed to update pressure chart:', error);
                     }
@@ -1361,49 +1452,9 @@ function dashboardApp() {
             }
         },
         
-        async updateHistoricalData() {
-            await this.loadSensorData();
-            if (this.temperatureChart && this.sensorData.length > 0 && !this.chartsDisabled) {
-                try {
-                    this.updateTemperatureChart();
-                } catch (error) {
-                    console.error('Failed to update temperature chart:', error);
-                }
-            }
-            if (this.humidityChart && this.sensorData.length > 0 && !this.chartsDisabled) {
-                try {
-                    this.updateHumidityChart();
-                } catch (error) {
-                    console.error('Failed to update humidity chart:', error);
-                }
-            }
-            if (this.pressureChart && this.sensorData.length > 0 && !this.chartsDisabled) {
-                try {
-                    this.updatePressureChart();
-                } catch (error) {
-                    console.error('Failed to update pressure chart:', error);
-                }
-            }
-        },
 
-        async refreshHistoricalData() {
-            await this.updateHistoricalData();
-        },
         
-        async updatePredictions() {
-            // Load predictions for the selected time range
-            await this.loadPredictions();
-            
-            // Update predictions chart if ready and not disabled
-            if (this.predictionsChart && this.recentPredictions.length > 0 && !this.chartsDisabled) {
-                try {
-                    this.updatePredictionsChart();
-                } catch (error) {
-                    console.error('Failed to update predictions chart:', error);
-                }
-            }
-        },
-        
+
         async refreshAnalysis() {
             this.analysisLoading = {
                 timeSeries: true,
@@ -1473,8 +1524,8 @@ function dashboardApp() {
         },
         
         getConfidenceClass(confidence) {
-            if (confidence >= 0.8) return 'confidence-high';
-            if (confidence >= 0.6) return 'confidence-medium';
+            if (confidence >= 0.7) return 'confidence-high';
+            if (confidence >= 0.5) return 'confidence-medium';
             return 'confidence-low';
         },
 
@@ -1484,6 +1535,196 @@ function dashboardApp() {
             } else {
                 return 'status-red';
             }
+        },
+        
+        calculateWeatherTrends() {
+            if (!this.sensorData || this.sensorData.length < 2) return;
+            
+            // Get last 3 data points for trend calculation
+            const recentData = this.sensorData.slice(-3);
+            
+            // Calculate temperature trend
+            if (recentData.length >= 2) {
+                const tempDiff = recentData[recentData.length - 1].temperature - recentData[0].temperature;
+                if (Math.abs(tempDiff) < 0.5) {
+                    this.currentWeather.temperatureTrend = 'stable';
+                } else {
+                    this.currentWeather.temperatureTrend = tempDiff > 0 ? 'up' : 'down';
+                }
+            }
+            
+            // Calculate pressure trend
+            if (recentData.length >= 2) {
+                const pressureDiff = recentData[recentData.length - 1].pressure - recentData[0].pressure;
+                if (Math.abs(pressureDiff) < 1) {
+                    this.currentWeather.pressureTrend = 'stable';
+                } else {
+                    this.currentWeather.pressureTrend = pressureDiff > 0 ? 'up' : 'down';
+                }
+            }
+        },
+        
+        getWeatherSummary() {
+            if (!this.currentWeather.temperature) return 'Weather data unavailable';
+            
+            const temp = this.currentWeather.temperature;
+            const humidity = this.currentWeather.humidity;
+            
+            if (temp >= 30) return 'Hot';
+            if (temp >= 25) return 'Warm';
+            if (temp >= 20) return 'Mild';
+            if (temp >= 15) return 'Cool';
+            if (temp >= 10) return 'Cold';
+            return 'Very Cold';
+        },
+        
+        getWeatherDescription() {
+            if (!this.currentWeather.temperature) return '';
+            
+            const temp = this.currentWeather.temperature;
+            const humidity = this.currentWeather.humidity;
+            
+            if (temp >= 30 && humidity >= 80) return 'Hot and Humid';
+            if (temp >= 30) return 'Hot and Dry';
+            if (temp >= 25 && humidity >= 80) return 'Warm and Humid';
+            if (temp >= 25) return 'Warm and Pleasant';
+            if (temp >= 20 && humidity >= 80) return 'Mild and Humid';
+            if (temp >= 20) return 'Mild and Comfortable';
+            if (temp >= 15) return 'Cool and Refreshing';
+            if (temp >= 10) return 'Cold';
+            return 'Very Cold';
+        },
+        
+        getDataAge() {
+            if (!this.currentWeather.rawTimestamp) return 'Unknown';
+            
+            const now = new Date();
+            const dataTime = new Date(this.currentWeather.rawTimestamp);
+            const diffMs = now - dataTime;
+            const diffMinutes = Math.floor(diffMs / (1000 * 60));
+            
+            if (diffMinutes < 1) return 'Just now';
+            if (diffMinutes < 60) return `${diffMinutes} min ago`;
+            
+            const diffHours = Math.floor(diffMinutes / 60);
+            if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+            
+            const diffDays = Math.floor(diffHours / 24);
+            return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+        },
+        
+        getDataQualityClass() {
+            if (!this.currentWeather.rawTimestamp) return 'bg-gray-100';
+            
+            const now = new Date();
+            const dataTime = new Date(this.currentWeather.rawTimestamp);
+            const diffMs = now - dataTime;
+            const diffMinutes = Math.floor(diffMs / (1000 * 60));
+            
+            if (diffMinutes <= 5) return 'bg-green-100 text-green-800';
+            if (diffMinutes <= 15) return 'bg-yellow-100 text-yellow-800';
+            return 'bg-red-100 text-red-800';
+        },
+        
+        getDataQualityText() {
+            if (!this.currentWeather.rawTimestamp) return 'Data quality: Unknown';
+            
+            const now = new Date();
+            const dataTime = new Date(this.currentWeather.rawTimestamp);
+            const diffMs = now - dataTime;
+            const diffMinutes = Math.floor(diffMs / (1000 * 60));
+            
+            if (diffMinutes <= 5) return '✅ Data quality: Excellent (Recent)';
+            if (diffMinutes <= 15) return '⚠️ Data quality: Good (Somewhat old)';
+            return '❌ Data quality: Poor (Outdated)';
+        },
+        
+        getRawSourceDataQuality() {
+            if (this.controls.dataType !== 'source' || this.sensorData.length === 0) {
+                return null;
+            }
+            
+            const data = this.sensorData;
+            const timeSpan = (new Date(data[data.length - 1].timestamp) - new Date(data[0].timestamp)) / (1000 * 60 * 60); // hours
+            const avgInterval = timeSpan / (data.length - 1); // hours between points
+            
+            // Calculate gaps
+            const gaps = [];
+            for (let i = 1; i < data.length; i++) {
+                const prevTime = new Date(data[i-1].timestamp);
+                const currTime = new Date(data[i].timestamp);
+                const gap = (currTime - prevTime) / (1000 * 60 * 60); // hours
+                if (gap > 2) {
+                    gaps.push(gap);
+                }
+            }
+            
+            return {
+                totalPoints: data.length,
+                timeSpan: timeSpan,
+                avgInterval: avgInterval,
+                gaps: gaps.length,
+                maxGap: gaps.length > 0 ? Math.max(...gaps) : 0,
+                quality: avgInterval <= 0.5 ? 'good' : avgInterval <= 1 ? 'fair' : 'poor'
+            };
+        },
+        
+        getRawSourceDataQualityText() {
+            const quality = this.getRawSourceDataQuality();
+            if (!quality) return '';
+            
+            let text = `${quality.totalPoints} points over ${quality.timeSpan.toFixed(1)}h`;
+            text += ` (avg: ${quality.avgInterval.toFixed(2)}h)`;
+            
+            if (quality.gaps > 0) {
+                text += ` - ${quality.gaps} gaps (max: ${quality.maxGap.toFixed(1)}h)`;
+            }
+            
+            return text;
+        },
+        
+        getHistoricalDataQuality() {
+            if (this.historicalControls.dataType !== 'source' || this.sensorData.length === 0) {
+                return null;
+            }
+            
+            const data = this.sensorData;
+            const timeSpan = (new Date(data[data.length - 1].timestamp) - new Date(data[0].timestamp)) / (1000 * 60 * 60); // hours
+            const avgInterval = timeSpan / (data.length - 1); // hours between points
+            
+            // Calculate gaps
+            const gaps = [];
+            for (let i = 1; i < data.length; i++) {
+                const prevTime = new Date(data[i-1].timestamp);
+                const currTime = new Date(data[i].timestamp);
+                const gap = (currTime - prevTime) / (1000 * 60 * 60); // hours
+                if (gap > 2) {
+                    gaps.push(gap);
+                }
+            }
+            
+            return {
+                totalPoints: data.length,
+                timeSpan: timeSpan,
+                avgInterval: avgInterval,
+                gaps: gaps.length,
+                maxGap: gaps.length > 0 ? Math.max(...gaps) : 0,
+                quality: avgInterval <= 0.5 ? 'good' : avgInterval <= 1 ? 'fair' : 'poor'
+            };
+        },
+        
+        getHistoricalDataQualityText() {
+            const quality = this.getHistoricalDataQuality();
+            if (!quality) return '';
+            
+            let text = `${quality.totalPoints} points over ${quality.timeSpan.toFixed(1)}h`;
+            text += ` (avg: ${quality.avgInterval.toFixed(2)}h)`;
+            
+            if (quality.gaps > 0) {
+                text += ` - ${quality.gaps} gaps (max: ${quality.maxGap.toFixed(1)}h)`;
+            }
+            
+            return text;
         }
     }
 }

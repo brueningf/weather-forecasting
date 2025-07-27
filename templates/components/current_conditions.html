@@ -1,0 +1,119 @@
+<!-- Current Conditions Component -->
+<div class="bg-white rounded-xl p-6 card-hover shadow-sm">
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-900">🌡️ Current Conditions</h2>
+        <div class="flex items-center space-x-2">
+            <div class="text-sm text-gray-500" x-text="'Updated: ' + lastUpdateTime"></div>
+            <button @click="loadCurrentWeather()" class="text-blue-600 hover:text-blue-800 text-sm transition-colors">
+                🔄
+            </button>
+        </div>
+    </div>
+    
+    <!-- Loading State -->
+    <div x-show="currentWeatherLoading" class="text-center py-4">
+        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+        <p class="text-sm text-gray-600">Loading current weather...</p>
+    </div>
+    
+    <!-- Error State -->
+    <div x-show="currentWeatherError && currentWeatherError !== 'No weather data available'" class="p-3 bg-red-50 border border-red-200 rounded-lg mb-4">
+        <div class="text-sm text-red-600">
+            <strong>Error:</strong> <span x-text="currentWeatherError"></span>
+        </div>
+    </div>
+    
+    <!-- No Data State -->
+    <div x-show="!currentWeatherLoading && !currentWeatherError && (!currentWeather.temperature && !currentWeather.humidity && !currentWeather.pressure)" class="p-3 bg-yellow-50 border border-yellow-200 rounded-lg mb-4">
+        <div class="text-sm text-yellow-700">
+            <strong>Info:</strong> No weather data available at the moment. Data may be temporarily unavailable or the system is collecting new readings.
+        </div>
+    </div>
+    
+    <!-- Main Weather Metrics -->
+    <div class="grid grid-cols-3 gap-4" x-show="!currentWeatherLoading && !currentWeatherError">
+        <div class="text-center">
+            <div class="text-3xl font-bold text-red-600" x-text="currentWeather.temperature ? currentWeather.temperature.toFixed(1) + '°C' : '--'"></div>
+            <div class="text-sm text-gray-600">Temperature</div>
+            <!-- Temperature Trend Indicator -->
+            <div class="text-xs mt-1" x-show="currentWeather.temperatureTrend">
+                <span x-show="currentWeather.temperatureTrend === 'up'" class="text-red-500">↗️ Rising</span>
+                <span x-show="currentWeather.temperatureTrend === 'down'" class="text-blue-500">↘️ Falling</span>
+                <span x-show="currentWeather.temperatureTrend === 'stable'" class="text-gray-500">→ Stable</span>
+            </div>
+        </div>
+        <div class="text-center">
+            <div class="text-3xl font-bold text-blue-600" x-text="currentWeather.humidity ? currentWeather.humidity.toFixed(1) + '%' : '--'"></div>
+            <div class="text-sm text-gray-600">Humidity</div>
+            <!-- Humidity Level Indicator -->
+            <div class="text-xs mt-1" x-show="currentWeather.humidity">
+                <span x-show="currentWeather.humidity >= 80" class="text-blue-600">💧 High</span>
+                <span x-show="currentWeather.humidity >= 40 && currentWeather.humidity < 80" class="text-green-600">🌤️ Moderate</span>
+                <span x-show="currentWeather.humidity < 40" class="text-orange-600">☀️ Low</span>
+            </div>
+        </div>
+        <div class="text-center">
+            <div class="text-3xl font-bold text-green-600" x-text="currentWeather.pressure ? currentWeather.pressure.toFixed(1) + 'hPa' : '--'"></div>
+            <div class="text-sm text-gray-600">Pressure</div>
+            <!-- Pressure Trend Indicator -->
+            <div class="text-xs mt-1" x-show="currentWeather.pressureTrend">
+                <span x-show="currentWeather.pressureTrend === 'up'" class="text-green-500">↗️ Rising</span>
+                <span x-show="currentWeather.pressureTrend === 'down'" class="text-orange-500">↘️ Falling</span>
+                <span x-show="currentWeather.pressureTrend === 'stable'" class="text-gray-500">→ Stable</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Weather Summary -->
+    <div class="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200" x-show="!currentWeatherLoading && !currentWeatherError && currentWeather.temperature && currentWeather.temperature !== '--'">
+        <div class="text-center">
+            <div class="text-lg font-semibold text-blue-800" x-text="getWeatherSummary()"></div>
+            <div class="text-sm text-blue-600 mt-1" x-text="getWeatherDescription()"></div>
+        </div>
+    </div>
+    
+    <!-- Last Predicted Temperature -->
+    <div class="mt-4 p-3 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-200" x-show="!currentWeatherLoading && !currentWeatherError && lastPredictedTemp">
+        <div class="text-center">
+            <div class="text-2xl font-bold text-purple-700" x-text="lastPredictedTemp ? lastPredictedTemp.toFixed(1) + '°C' : '--'"></div>
+            <div class="text-sm text-purple-600">Latest Prediction</div>
+            <div class="text-xs text-purple-500 mt-1" x-text="lastPredictedTempTime ? 'For: ' + formatDateTime(lastPredictedTempTime) : ''"></div>
+            <!-- Prediction Trend Indicator -->
+            <div class="text-xs mt-2" x-show="lastPredictedTemp && currentWeather.temperature">
+                <span x-show="lastPredictedTemp > currentWeather.temperature" class="text-red-600">↗️ Predicted to rise</span>
+                <span x-show="lastPredictedTemp < currentWeather.temperature" class="text-blue-600">↘️ Predicted to fall</span>
+                <span x-show="Math.abs(lastPredictedTemp - currentWeather.temperature) <= 0.5" class="text-green-600">→ Predicted stable</span>
+            </div>
+            <!-- Prediction Accuracy Indicator -->
+            <div class="text-xs mt-1" x-show="lastPredictedTemp && currentWeather.temperature">
+                <span x-show="Math.abs(lastPredictedTemp - currentWeather.temperature) <= 1" class="text-green-600">✅ Accurate</span>
+                <span x-show="Math.abs(lastPredictedTemp - currentWeather.temperature) > 1 && Math.abs(lastPredictedTemp - currentWeather.temperature) <= 3" class="text-yellow-600">⚠️ Close</span>
+                <span x-show="Math.abs(lastPredictedTemp - currentWeather.temperature) > 3" class="text-red-600">❌ Off</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Additional Information -->
+    <div class="mt-4 p-3 bg-gray-50 rounded-lg" x-show="!currentWeatherLoading && !currentWeatherError && currentWeather.temperature">
+        <div class="grid grid-cols-2 gap-4 text-sm text-gray-600">
+            <div>
+                <strong>Module:</strong> <span x-text="currentWeather.module || 'Unknown'"></span>
+            </div>
+            <div>
+                <strong>Data Source:</strong> <span x-text="currentWeather.dataSource || 'Unknown'"></span>
+            </div>
+            <div>
+                <strong>Timestamp:</strong> <span x-text="currentWeather.timestamp || '--'"></span>
+            </div>
+            <div>
+                <strong>Age:</strong> <span x-text="getDataAge()"></span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Data Quality Indicator -->
+    <div class="mt-4 p-2 rounded-lg" x-show="!currentWeatherLoading && !currentWeatherError && currentWeather.temperature" 
+         :class="getDataQualityClass()">
+        <div class="text-xs text-center" x-text="getDataQualityText()"></div>
+    </div>
+</div> 

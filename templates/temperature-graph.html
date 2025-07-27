@@ -70,10 +70,10 @@
                         @change="refreshLivePredictions()"
                         class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
                     >
-                        <option value="6" selected>Next 6 hours</option>
+                        <option value="6">Next 6 hours</option>
                         <option value="12">Next 12 hours</option>
                         <option value="24">Next 24 hours</option>
-                        <option value="48">Next 48 hours</option>
+                        <option value="48" selected>Next 48 hours</option>
                         <option value="168">Next week</option>
                     </select>
                 </div>
@@ -90,11 +90,11 @@
         </div>
         <script>
         let livePredictionsChart;
-        let futureHours = 6;
+        let futureHours = 48;  // Changed from 6 to 48
         function getFutureHours() {
             const el = document.getElementById('futureHours');
-            if (el) return parseInt(el.value, 10) || 6;
-            return 6;
+            if (el) return parseInt(el.value, 10) || 48;  // Changed default from 6 to 48
+            return 48;  // Changed default from 6 to 48
         }
         async function fetchAndUpdateLivePredictions() {
             try {
