@@ -21,13 +21,21 @@ class Config:
     
     # API Configuration
     API_HOST = os.getenv('API_HOST', '0.0.0.0')
-    API_PORT = int(os.getenv('API_PORT', 8000))
+    API_PORT = int(os.getenv('API_PORT', 5000))
     API_RELOAD = os.getenv('API_RELOAD', 'true').lower() == 'true'
     
     # Model Configuration
-    MODEL_PATH = os.getenv('MODEL_PATH', 'model.pth')
+    MODEL_PATH = os.getenv('MODEL_PATH', 'models/weather_model.pkl')
     METRICS_PATH = os.getenv('METRICS_PATH', 'metrics.json')
     PREDICTION_INTERVAL_MINUTES = int(os.getenv('PREDICTION_INTERVAL_MINUTES', 10))
     
-    # Data Export Configuration
-    EXPORT_BATCH_SIZE = int(os.getenv('EXPORT_BATCH_SIZE', 1000)) 
+    # Logging Configuration
+    LOGGING_ENABLED = os.getenv('LOGGING_ENABLED', 'true').lower() == 'true'
+    LOG_LEVEL = os.getenv('LOG_LEVEL', 'info').lower()  # error, warn, info, debug
+    LOG_VERBOSE = os.getenv('LOG_VERBOSE', 'false').lower() == 'true'
+    
+    # Data Processing Configuration
+    EXPORT_BATCH_SIZE = int(os.getenv('EXPORT_BATCH_SIZE', 1000))
+
+# Create a global config instance
+config = Config() 
