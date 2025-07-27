@@ -108,8 +108,8 @@ async def dashboard(request: Request):
     })
 
 @app.get("/api/predictions", response_model=List[PredictionResponse])
-async def get_predictions(hours: int = 24):
-    """Get weather predictions for the specified number of hours"""
+async def get_predictions(hours: int = 48):
+    """Get weather predictions for the specified number of hours (default: 48 hours)"""
     try:
         # Use the correct method to get predictions from database
         predictions_df = weather_data_controller.get_latest_predictions(hours=hours)
@@ -123,7 +123,7 @@ async def get_predictions(hours: int = 24):
             data.append(PredictionResponse(
                 timestamp=row['timestamp'],
                 predicted_temperature=float(row.get('predicted_temperature', 0)),
-                confidence=float(row.get('confidence', 0))
+                confidence=float(row.get('confidence', 0.5))  # Default to 0.5 if no confidence
             ))
         
         return data

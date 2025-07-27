@@ -114,8 +114,7 @@ class DatabaseManager:
                     SELECT timestamp, temperature, humidity, pressure, module
                     FROM {self.sensor_data_table}
                     WHERE timestamp >= %s AND module = %s
-                    ORDER BY timestamp DESC
-                    LIMIT 1000
+                    ORDER BY timestamp ASC
                 """
                 df = pd.read_sql(query, self.source_engine, params=(cutoff_time, module_id))
             else:
@@ -123,10 +122,22 @@ class DatabaseManager:
                     SELECT timestamp, temperature, humidity, pressure, module
                     FROM {self.sensor_data_table}
                     WHERE timestamp >= %s
-                    ORDER BY timestamp DESC
-                    LIMIT 1000
+                    ORDER BY timestamp ASC
                 """
                 df = pd.read_sql(query, self.source_engine, params=(cutoff_time,))
+            
+            # Log data distribution for debugging
+            if not df.empty:
+                logger.info(f"Raw sensor data: {len(df)} records from {df['timestamp'].min()} to {df['timestamp'].max()}")
+                if module_id:
+                    logger.info(f"Module {module_id}: {len(df)} records")
+                else:
+                    # Show distribution across modules
+                    module_counts = df['module'].value_counts()
+                    logger.info(f"Module distribution: {module_counts.to_dict()}")
+            else:
+                logger.warning(f"No raw sensor data found for hours={hours}, module_id={module_id}")
+            
             return df
         except Exception as e:
             logger.error(f"Error getting latest sensor data from source database: {e}")
@@ -209,12 +220,8 @@ class DatabaseManager:
                 logger.debug(f"Retrieved {len(results)} records")
             session.close()
             if not results and (hours_back or batch_id):
-                logger.warning("No results found with filters. Trying again without filters.")
-                session = self.Session()
-                query = session.query(PreprocessedData).order_by(PreprocessedData.timestamp)
-                results = query.all()
-                session.close()
-                logger.debug(f"Retrieved {len(results)} records without filters")
+                logger.warning("No results found with filters. Returning empty result set.")
+                return pd.DataFrame()
             if results:
                 df = pd.DataFrame([{c.name: getattr(r, c.name) for c in PreprocessedData.__table__.columns} for r in results])
                 if not df.empty:

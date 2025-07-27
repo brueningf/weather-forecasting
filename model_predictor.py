@@ -49,6 +49,64 @@ class ModelPredictor:
         df_enhanced['month_cos'] = np.cos(2 * np.pi * df_enhanced['month'] / 12)
         return df_enhanced
 
+    def calculate_confidence(self, input_tensor, prediction, history_df):
+        """
+        Calculate prediction confidence based on multiple factors:
+        1. Model uncertainty (using dropout during inference)
+        2. Data quality (recentness and consistency)
+        3. Forecast horizon (confidence decreases with time)
+        """
+        try:
+            confidence = 0.8  # Base confidence
+            
+            # 1. Model uncertainty using dropout
+            self.model.train()  # Enable dropout for uncertainty estimation
+            predictions = []
+            for _ in range(10):  # Multiple forward passes with dropout
+                with torch.no_grad():
+                    pred = self.model(input_tensor)
+                    predictions.append(pred.cpu().numpy().flatten()[0])
+            
+            # Calculate standard deviation of predictions
+            pred_std = np.std(predictions)
+            uncertainty_factor = max(0.1, min(1.0, 1.0 - pred_std / 5.0))  # Normalize to 0-1
+            
+            # 2. Data quality assessment
+            if not history_df.empty:
+                # Check data recency
+                latest_time = history_df.index[-1]
+                now = datetime.now()
+                time_diff = (now - latest_time).total_seconds() / 3600  # hours
+                recency_factor = max(0.1, 1.0 - time_diff / 24.0)  # Decrease confidence if data is old
+                
+                # Check data consistency (variance in recent values)
+                recent_values = history_df['temperature'].tail(6).values  # Last hour
+                if len(recent_values) > 1:
+                    temp_variance = np.var(recent_values)
+                    consistency_factor = max(0.1, 1.0 - temp_variance / 100.0)  # Normalize variance
+                else:
+                    consistency_factor = 0.5
+            else:
+                recency_factor = 0.5
+                consistency_factor = 0.5
+            
+            # 3. Forecast horizon factor (confidence decreases with time)
+            # This will be passed as a parameter from the calling function
+            
+            # Combine factors
+            confidence = (uncertainty_factor * 0.4 + 
+                        recency_factor * 0.3 + 
+                        consistency_factor * 0.3)
+            
+            # Ensure confidence is between 0.1 and 0.95
+            confidence = max(0.1, min(0.95, confidence))
+            
+            return confidence
+            
+        except Exception as e:
+            logger.warning(f"Error calculating confidence: {e}")
+            return 0.5  # Fallback confidence
+
     def load_model(self):
         """Load the trained model"""
         try:
@@ -312,20 +370,33 @@ class ModelPredictor:
             else:
                 # freq is a Timedelta
                 future_timestamps = [last_timestamp + (i+1)*freq for i in range(forecast_periods)]
-            # --- End timestamp fix ---
+            
             # Prepare initial sequence
             history = df.copy()
             preds = []
+            confidences = []
+            
             for i in range(forecast_periods):
                 X_tensor = self.prepare_input_tensor(history)
                 if X_tensor is None:
                     break
+                
+                # Calculate confidence for this prediction
+                confidence = self.calculate_confidence(X_tensor, None, history)
+                
+                # Apply forecast horizon factor (confidence decreases with time)
+                horizon_factor = max(0.1, 1.0 - (i / forecast_periods) * 0.5)  # Decrease by up to 50%
+                confidence *= horizon_factor
+                
                 with torch.no_grad():
                     pred = self.model(X_tensor)
                     pred = pred.cpu().numpy().flatten()[0]
-                # --- Post-processing: clip output ---
+                
+                # Post-processing: clip output
                 pred = float(np.clip(pred, -50, 60))
                 preds.append(pred)
+                confidences.append(confidence)
+                
                 # Append prediction to history for next step
                 next_row = history.iloc[-1].copy()
                 next_row['temperature'] = pred
@@ -333,15 +404,14 @@ class ModelPredictor:
                 next_index = future_timestamps[i]
                 next_row.name = next_index
                 history = pd.concat([history, pd.DataFrame([next_row])])
+            
             if len(preds) > 0:
                 predictions_df = pd.DataFrame({
                     'timestamp': future_timestamps[:len(preds)],
                     'predicted_temperature': preds,
-                    'confidence': 0.8
+                    'confidence': confidences
                 })
                 predictions_df.set_index('timestamp', inplace=True)
-                # Remove or downgrade this noisy log
-                # logger.info(f"Generated {len(predictions_df)} predictions for future timestamps")
                 return predictions_df
             return pd.DataFrame()
         except Exception as e:
