@@ -110,4 +110,10 @@
             </div>
         </div>
     </div>
+    
+    <!-- Data Quality Indicator -->
+    <div class="mt-4 p-2 rounded-lg" x-show="!currentWeatherLoading && !currentWeatherError && currentWeather.temperature" 
+         :class="getDataQualityClass()">
+        <div class="text-xs text-center" x-text="getDataQualityText()"></div>
+    </div>
 </div> 

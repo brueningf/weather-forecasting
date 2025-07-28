@@ -582,15 +582,7 @@ function dashboardApp() {
                         pressure: data[0].pressure,
                         module: 'preprocessed',
                         dataSource: 'preprocessed',
-                        timestamp: new Date(data[0].timestamp).toLocaleString(undefined, {
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                            timeZoneName: 'short'
-                        }),
+                        timestamp: new Date(data[0].timestamp).toLocaleString(),
                         rawTimestamp: data[0].timestamp
                     };
                 } else {
@@ -604,15 +596,7 @@ function dashboardApp() {
                             pressure: data[0].pressure,
                             module: data[0].module,
                             dataSource: 'source',
-                            timestamp: new Date(data[0].timestamp).toLocaleString(undefined, {
-                                year: 'numeric',
-                                month: '2-digit',
-                                day: '2-digit',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                second: '2-digit',
-                                timeZoneName: 'short'
-                            }),
+                            timestamp: new Date(data[0].timestamp).toLocaleString(),
                             rawTimestamp: data[0].timestamp
                         };
                     } else {
@@ -1519,8 +1503,9 @@ function dashboardApp() {
             }
             this.autoRefreshInterval = setInterval(() => {
                 this.loadPredictions();
+                this.loadCurrentWeather();
                 this.updateLastUpdateTime();
-            }, 60000); // 1 minute
+            }, 60000); // 1 minute (60 seconds)
         },
         
         stopAutoRefresh() {
@@ -1535,15 +1520,7 @@ function dashboardApp() {
         },
         
         formatDateTime(timestamp) {
-            return new Date(timestamp).toLocaleString(undefined, {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                timeZoneName: 'short'
-            });
+            return new Date(timestamp).toLocaleString();
         },
         
         getConfidenceClass(confidence) {
@@ -1636,7 +1613,31 @@ function dashboardApp() {
             return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
         },
         
-
+        getDataQualityClass() {
+            if (!this.currentWeather.rawTimestamp) return 'bg-gray-100';
+            
+            const now = new Date();
+            const dataTime = new Date(this.currentWeather.rawTimestamp);
+            const diffMs = now - dataTime;
+            const diffMinutes = Math.floor(diffMs / (1000 * 60));
+            
+            if (diffMinutes <= 5) return 'bg-green-100 text-green-800';
+            if (diffMinutes <= 15) return 'bg-yellow-100 text-yellow-800';
+            return 'bg-red-100 text-red-800';
+        },
+        
+        getDataQualityText() {
+            if (!this.currentWeather.rawTimestamp) return 'Data quality: Unknown';
+            
+            const now = new Date();
+            const dataTime = new Date(this.currentWeather.rawTimestamp);
+            const diffMs = now - dataTime;
+            const diffMinutes = Math.floor(diffMs / (1000 * 60));
+            
+            if (diffMinutes <= 5) return '✅ Data quality: Excellent (Recent)';
+            if (diffMinutes <= 15) return '⚠️ Data quality: Good (Somewhat old)';
+            return '❌ Data quality: Poor (Outdated)';
+        },
         
         getRawSourceDataQuality() {
             if (this.controls.dataType !== 'source' || this.sensorData.length === 0) {
