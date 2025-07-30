@@ -136,6 +136,7 @@ async def get_predictions(hours: int = 48):
 async def get_sensor_data(hours: int = 24, module_id: Optional[str] = None):
     """Get actual sensor data for the specified number of hours"""
     try:
+        logger.info(f"Fetching sensor data with hours={hours}, module_id={module_id}")
         # Get raw sensor data using the correct method name
         raw_data = weather_data_controller.fetch_recent_sensor_data(hours=hours, module_id=module_id)
         
@@ -184,6 +185,7 @@ async def get_available_modules():
 async def get_preprocessed_data(hours_back: Optional[int] = None, limit: Optional[int] = None):
     """Get preprocessed data for analysis"""
     try:
+        logger.info(f"Fetching preprocessed data with hours_back={hours_back}, limit={limit}")
         df = weather_data_controller.fetch_preprocessed_data(hours_back=hours_back, limit=limit)
         
         if df.empty:

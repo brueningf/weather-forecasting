@@ -108,6 +108,7 @@ class DatabaseManager:
     def get_latest_sensor_data(self, hours=24, module_id=None):
         """Get latest sensor data from source database (pandas)"""
         try:
+            logger.info(f"Getting sensor data with hours={hours}, module_id={module_id}")
             cutoff_time = datetime.now() - timedelta(hours=hours)
             if module_id:
                 query = f"""
@@ -129,6 +130,7 @@ class DatabaseManager:
             # Log data distribution for debugging
             if not df.empty:
                 logger.info(f"Raw sensor data: {len(df)} records from {df['timestamp'].min()} to {df['timestamp'].max()}")
+                logger.info(f"Requested hours: {hours}, actual time span: {(df['timestamp'].max() - df['timestamp'].min()).total_seconds() / 3600:.1f} hours")
                 if module_id:
                     logger.info(f"Module {module_id}: {len(df)} records")
                 else:
@@ -201,7 +203,8 @@ class DatabaseManager:
             query = session.query(PreprocessedData)
             # Add debugging
             total_count = session.query(PreprocessedData).count()
-            logger.debug(f"Total preprocessed records in database: {total_count}")
+            logger.info(f"Total preprocessed records in database: {total_count}")
+            logger.info(f"Requested hours_back: {hours_back}, batch_id: {batch_id}, limit: {limit}")
             if batch_id:
                 query = query.filter(PreprocessedData.batch_id == batch_id)
                 logger.debug(f"Filtering by batch_id: {batch_id}")
@@ -227,7 +230,10 @@ class DatabaseManager:
                 if not df.empty:
                     df['timestamp'] = pd.to_datetime(df['timestamp'])
                     df = df.set_index('timestamp')
-                    logger.debug(f"Returning DataFrame with shape: {df.shape}")
+                    logger.info(f"Returning DataFrame with shape: {df.shape}")
+                    if not df.empty:
+                        logger.info(f"Data time range: {df.index.min()} to {df.index.max()}")
+                        logger.info(f"Number of records: {len(df)}")
                 return df[['temperature', 'humidity', 'pressure']] if not df.empty else df
             else:
                 logger.debug("No results found in query (even without filters)")
