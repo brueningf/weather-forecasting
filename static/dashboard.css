@@ -116,7 +116,8 @@
 /* Chart container enhancements */
 .chart-container {
     position: relative;
-    height: 400px;
+    min-height: 300px;
+    height: auto;
     width: 100%;
     background: white;
     border-radius: 12px;
@@ -208,7 +209,8 @@
 /* Responsive improvements */
 @media (max-width: 768px) {
     .chart-container {
-        height: 300px;
+        min-height: 250px;
+        height: auto;
     }
     
     .metric-value {

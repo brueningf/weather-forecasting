@@ -48,21 +48,22 @@
     <!-- Header Section -->
     <div class="bg-white shadow-sm border-b">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center py-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center py-4 sm:py-6 space-y-4 sm:space-y-0">
                 <div class="flex items-center">
-                    <div class="text-3xl mr-3">🌦️</div>
+                    <div class="text-2xl sm:text-3xl mr-3">🌦️</div>
                     <div>
-                        <h1 class="text-2xl font-bold text-gray-900">Weather Forecasting Dashboard</h1>
-                        <p class="text-sm text-gray-500">Real-time monitoring & predictive analytics</p>
+                        <h1 class="text-xl sm:text-2xl font-bold text-gray-900">Weather Forecasting Dashboard</h1>
+                        <p class="text-xs sm:text-sm text-gray-500">Real-time monitoring & predictive analytics</p>
                     </div>
                 </div>
-                <div class="flex items-center space-x-4">
-                    <div class="text-sm text-gray-500">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-4 w-full sm:w-auto">
+                    <div class="text-xs sm:text-sm text-gray-500">
                         Last updated: <span x-text="lastUpdateTime"></span>
                     </div>
-                    <button @click="refreshAllData()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors">
+                    <button @click="refreshAllData()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 sm:px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition-colors text-sm">
                         <span class="refresh-button">🔄</span>
-                        <span>Refresh All</span>
+                        <span class="hidden sm:inline">Refresh All</span>
+                        <span class="sm:hidden">Refresh</span>
                     </button>
                 </div>
             </div>
@@ -70,49 +71,49 @@
     </div>
 
     <!-- Main Content -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div class="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-8">
         <!-- Real-Time Weather Monitoring -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-8 mb-6 sm:mb-8">
             <!-- Current Conditions -->
             {% include 'components/current_conditions.html' with context %}
 
             <!-- Model Performance -->
-            <div class="bg-white rounded-xl p-6 card-hover shadow-sm">
+            <div class="bg-white rounded-xl p-4 sm:p-6 card-hover shadow-sm">
                 <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-semibold text-gray-900">📈 Model Performance</h2>
-                    <button @click="refreshBenchmark()" class="text-blue-600 hover:text-blue-800 text-sm">🔄 Refresh</button>
+                    <h2 class="text-base sm:text-lg font-semibold text-gray-900">📈 Model Performance</h2>
+                    <button @click="refreshBenchmark()" class="text-blue-600 hover:text-blue-800 text-xs sm:text-sm">🔄 Refresh</button>
                 </div>
                 
-                <div class="grid grid-cols-3 gap-4">
+                <div class="grid grid-cols-3 gap-2 sm:gap-4">
                     <div class="text-center">
-                        <div class="text-2xl font-bold text-blue-700" x-text="modelMetrics.mae ? modelMetrics.mae.toFixed(3) : '--'"></div>
-                        <div class="text-sm text-gray-600">MAE</div>
+                        <div class="text-lg sm:text-2xl font-bold text-blue-700" x-text="modelMetrics.mae ? modelMetrics.mae.toFixed(3) : '--'"></div>
+                        <div class="text-xs sm:text-sm text-gray-600">MAE</div>
                     </div>
                     <div class="text-center">
-                        <div class="text-2xl font-bold text-blue-700" x-text="modelMetrics.rmse ? modelMetrics.rmse.toFixed(3) : '--'"></div>
-                        <div class="text-sm text-gray-600">RMSE</div>
+                        <div class="text-lg sm:text-2xl font-bold text-blue-700" x-text="modelMetrics.rmse ? modelMetrics.rmse.toFixed(3) : '--'"></div>
+                        <div class="text-xs sm:text-sm text-gray-600">RMSE</div>
                     </div>
                     <div class="text-center">
-                        <div class="text-2xl font-bold text-blue-700" x-text="modelMetrics.r2 ? modelMetrics.r2.toFixed(3) : '--'"></div>
-                        <div class="text-sm text-gray-600">R²</div>
+                        <div class="text-lg sm:text-2xl font-bold text-blue-700" x-text="modelMetrics.r2 ? modelMetrics.r2.toFixed(3) : '--'"></div>
+                        <div class="text-xs sm:text-sm text-gray-600">R²</div>
                     </div>
                 </div>
                 
                 <div x-show="modelMetrics.error" class="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <div class="text-sm text-red-600" x-text="modelMetrics.error"></div>
+                    <div class="text-xs sm:text-sm text-red-600" x-text="modelMetrics.error"></div>
                 </div>
             </div>
         </div>
 
         <!-- Controls Section -->
-        <div class="bg-white rounded-xl p-6 mb-8 shadow-sm">
-            <h2 class="text-lg font-semibold text-gray-900 mb-4">📋 Controls & Filters</h2>
+        <div class="bg-white rounded-xl p-4 sm:p-6 mb-6 sm:mb-8 shadow-sm">
+            <h2 class="text-base sm:text-lg font-semibold text-gray-900 mb-4">📋 Controls & Filters</h2>
             
             <!-- Data Quality Indicator -->
             <div x-show="controls.dataType === 'source' && sensorData.length > 0" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <div class="flex items-center">
-                    <span class="text-blue-600 mr-2">ℹ️</span>
-                    <div class="text-sm text-blue-800">
+                <div class="flex items-start sm:items-center">
+                    <span class="text-blue-600 mr-2 mt-0.5 sm:mt-0">ℹ️</span>
+                    <div class="text-xs sm:text-sm text-blue-800">
                         <div class="font-medium">Raw Source Data Info:</div>
                         <div x-show="sensorData.length > 0">
                             <span x-text="getRawSourceDataQualityText()"></span>
@@ -126,10 +127,10 @@
                 </div>
             </div>
             
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Time Range</label>
-                    <select x-model="controls.timeRange" @change="updateData()" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <label class="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Time Range</label>
+                    <select x-model="controls.timeRange" @change="updateTimeControl()" class="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-2 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                         <template x-for="option in timeRangeOptions" :key="option.value">
                             <option :value="option.value" x-text="option.label"></option>
                         </template>
@@ -137,8 +138,8 @@
                 </div>
                 
                 <div x-show="controls.dataType === 'source'">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Module</label>
-                    <select x-model="controls.selectedModule" @change="updateData()" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <label class="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Module</label>
+                    <select x-model="controls.selectedModule" @change="updateData()" class="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-2 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                         <option value="">All Modules</option>
                         <template x-for="module in availableModules" :key="module">
                             <option :value="module" x-text="module"></option>
@@ -147,24 +148,26 @@
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Data Type</label>
-                    <select x-model="controls.dataType" @change="updateData()" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <label class="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Data Type</label>
+                    <select x-model="controls.dataType" @change="updateData()" class="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-2 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                         <option value="preprocessed">Preprocessed</option>
                         <option value="source">Raw Source</option>
                     </select>
                 </div>
+                
+
             </div>
         </div>
 
         <!-- Predictive Analytics Dashboard -->
-        <div class="bg-white rounded-xl p-6 mb-8 card-hover shadow-sm">
-            <div class="flex items-center justify-between mb-6">
-                <h2 class="text-xl font-semibold text-gray-900">🔮 Predictive Analytics</h2>
-                <div class="flex items-center space-x-4">
-                    <div class="text-sm text-gray-500">
+        <div class="bg-white rounded-xl p-4 sm:p-6 mb-6 sm:mb-8 card-hover shadow-sm">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 space-y-2 sm:space-y-0">
+                <h2 class="text-base sm:text-xl font-semibold text-gray-900">🔮 Predictive Analytics</h2>
+                <div class="flex items-center space-x-2 sm:space-x-4">
+                    <div class="text-xs sm:text-sm text-gray-500">
                         Auto-refresh: <span x-text="autoRefreshEnabled ? 'ON' : 'OFF'"></span>
                     </div>
-                    <button @click="toggleAutoRefresh()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm">
+                    <button @click="toggleAutoRefresh()" class="bg-blue-600 hover:bg-blue-700 text-white px-2 sm:px-3 py-1 rounded text-xs sm:text-sm">
                         <span x-text="autoRefreshEnabled ? 'Disable' : 'Enable'"></span>
                     </button>
                 </div>
@@ -174,57 +177,56 @@
                 <div id="predictionsChart"></div>
                 <div x-show="chartsDisabled" class="text-center py-8 text-gray-500">
                     <div class="text-2xl mb-2">📊</div>
-                    <p>Predictions chart temporarily disabled</p>
-                    <p class="text-sm">Data is still being collected and displayed in the table below</p>
+                    <p class="text-sm">Predictions chart temporarily disabled</p>
+                    <p class="text-xs">Data is still being collected and displayed in the table below</p>
                 </div>
             </div>
             
             <!-- Recent Predictions Table -->
-            <div class="mt-6">
-                <h3 class="text-lg font-semibold text-gray-900 mb-3">Recent Predictions</h3>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Predicted Temp</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Confidence</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            <template x-for="prediction in recentPredictions.slice(0, 5)" :key="prediction.timestamp">
-                                <tr>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="formatDateTime(prediction.timestamp)"></td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900" x-text="prediction.predicted_temperature.toFixed(1) + '°C'"></td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="prediction-confidence" :class="getConfidenceClass(prediction.confidence)" x-text="(prediction.confidence * 100).toFixed(1) + '%'"></span>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="status-dot status-green"></span>
-                                        <span class="text-sm text-gray-900">Active</span>
-                                    </td>
-                                </tr>
-                            </template>
-                        </tbody>
-                    </table>
+            <div class="mt-4 sm:mt-6">
+                <h3 class="text-sm sm:text-lg font-semibold text-gray-900 mb-3">Recent Predictions</h3>
+                <div class="overflow-x-auto -mx-4 sm:mx-0">
+                    <div class="inline-block min-w-full align-middle">
+                        <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
+                                        <th class="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Predicted Temp</th>
+                                        <th class="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Confidence</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <template x-for="prediction in recentPredictions.slice(0, 5)" :key="prediction.timestamp">
+                                        <tr>
+                                            <td class="px-3 sm:px-6 py-2 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900" x-text="formatDateTime(prediction.timestamp)"></td>
+                                            <td class="px-3 sm:px-6 py-2 sm:py-4 whitespace-nowrap text-xs sm:text-sm font-semibold text-gray-900" x-text="prediction.predicted_temperature.toFixed(1) + '°C'"></td>
+                                            <td class="px-3 sm:px-6 py-2 sm:py-4 whitespace-nowrap">
+                                                <span class="prediction-confidence text-xs sm:text-sm" :class="getConfidenceClass(prediction.confidence)" x-text="(prediction.confidence * 100).toFixed(1) + '%'"></span>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Advanced Data Analysis Suite -->
-        <div class="bg-white rounded-xl p-6 mb-8 card-hover shadow-sm">
-            <div class="flex items-center justify-between mb-6">
-                <h2 class="text-xl font-semibold text-gray-900">📊 Advanced Data Analysis</h2>
-                <button @click="refreshAnalysis()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg card-hover">
+        <div class="bg-white rounded-xl p-4 sm:p-6 mb-6 sm:mb-8 card-hover shadow-sm">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 space-y-2 sm:space-y-0">
+                <h2 class="text-base sm:text-xl font-semibold text-gray-900">📊 Advanced Data Analysis</h2>
+                <button @click="refreshAnalysis()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-1 sm:py-2 px-3 sm:px-4 rounded-lg card-hover text-xs sm:text-sm">
                     🔄 Refresh Analysis
                 </button>
             </div>
             
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                 <template x-for="plot in analysisPlots" :key="plot.id">
                     <div>
-                        <h3 class="text-lg font-semibold text-gray-700 mb-3" x-text="plot.title"></h3>
+                        <h3 class="text-sm sm:text-lg font-semibold text-gray-700 mb-3" x-text="plot.title"></h3>
                         <div class="relative">
                             <img :id="plot.id" :src="plot.src" :alt="plot.title" class="w-full rounded-lg shadow-sm">
                             <div x-show="analysisLoading[plot.key]" class="absolute inset-0 bg-gray-200 loading-skeleton rounded-lg"></div>
@@ -235,23 +237,23 @@
         </div>
 
         <!-- Historical Data Visualization -->
-        <div class="bg-white rounded-xl p-6 mb-8 card-hover shadow-sm">
-            <h2 class="text-xl font-semibold text-gray-900 mb-6">📈 Historical Data Visualization</h2>
+        <div class="bg-white rounded-xl p-4 sm:p-6 mb-6 sm:mb-8 card-hover shadow-sm">
+            <h2 class="text-base sm:text-xl font-semibold text-gray-900 mb-4 sm:mb-6">📈 Historical Data Visualization</h2>
             
             <!-- Historical Data Controls -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4 sm:mb-6">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Historical Time Range</label>
-                    <select x-model="historicalControls.timeRange" @change="loadSensorData('historical')" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                        <template x-for="option in timeRangeOptions" :key="option.value">
+                    <label class="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Historical Time Range</label>
+                    <select x-model="historicalControls.timeRange" @change="loadSensorData('historical')" class="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-2 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <template x-for="option in historicalTimeRangeOptions" :key="option.value">
                             <option :value="option.value" x-text="option.label"></option>
                         </template>
                     </select>
                 </div>
                 
                 <div x-show="historicalControls.dataType === 'source'">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Module</label>
-                    <select x-model="historicalControls.selectedModule" @change="loadSensorData('historical')" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <label class="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Module</label>
+                    <select x-model="historicalControls.selectedModule" @change="loadSensorData('historical')" class="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-2 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                         <option value="">All Modules</option>
                         <template x-for="module in availableModules" :key="module">
                             <option :value="module" x-text="module"></option>
@@ -260,25 +262,25 @@
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Historical Data Type</label>
-                    <select x-model="historicalControls.dataType" @change="loadSensorData('historical')" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <label class="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Historical Data Type</label>
+                    <select x-model="historicalControls.dataType" @change="loadSensorData('historical')" class="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-2 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                         <option value="preprocessed">Preprocessed</option>
                         <option value="source">Raw Source</option>
                     </select>
                 </div>
                 
                 <div class="flex items-end">
-                    <button @click="loadSensorData('historical')" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
+                    <button @click="loadSensorData('historical')" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-3 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm">
                         🔄 Refresh Historical
                     </button>
                 </div>
             </div>
             
             <!-- Historical Data Quality Indicator -->
-            <div x-show="historicalControls.dataType === 'source' && sensorData.length > 0" class="mb-6 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <div class="flex items-center">
-                    <span class="text-blue-600 mr-2">ℹ️</span>
-                    <div class="text-sm text-blue-800">
+            <div x-show="historicalControls.dataType === 'source' && sensorData.length > 0" class="mb-4 sm:mb-6 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div class="flex items-start sm:items-center">
+                    <span class="text-blue-600 mr-2 mt-0.5 sm:mt-0">ℹ️</span>
+                    <div class="text-xs sm:text-sm text-blue-800">
                         <div class="font-medium">Historical Raw Source Data Info:</div>
                         <div x-show="sensorData.length > 0">
                             <span x-text="getHistoricalDataQualityText()"></span>
@@ -293,15 +295,15 @@
             </div>
 
             <!-- Individual Historical Charts -->
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
                 <template x-for="chart in historicalCharts" :key="chart.id">
-                    <div class="bg-gray-50 rounded-lg p-4">
-                        <h3 class="text-lg font-semibold text-gray-900 mb-3" x-text="chart.title"></h3>
-                        <div class="chart-container" style="height: 300px;">
+                    <div class="bg-gray-50 rounded-lg p-3 sm:p-4">
+                        <h3 class="text-sm sm:text-lg font-semibold text-gray-900 mb-3" x-text="chart.title"></h3>
+                        <div class="chart-container">
                             <div :id="chart.id"></div>
                             <div x-show="chartsDisabled" class="text-center py-8 text-gray-500">
                                 <div class="text-2xl mb-2" x-text="chart.icon"></div>
-                                <p x-text="chart.name + ' chart temporarily disabled'"></p>
+                                <p class="text-xs sm:text-sm" x-text="chart.name + ' chart temporarily disabled'"></p>
                             </div>
                         </div>
                     </div>
@@ -310,21 +312,21 @@
         </div>
 
         <!-- System Status Overview -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
             <template x-for="status in systemStatusItems" :key="status.key">
-                <div class="bg-white rounded-xl p-6 card-hover shadow-sm">
+                <div class="bg-white rounded-xl p-4 sm:p-6 card-hover shadow-sm">
                     <div class="flex items-center justify-between">
                         <div>
-                            <p class="text-sm font-medium text-gray-600" x-text="status.label"></p>
+                            <p class="text-xs sm:text-sm font-medium text-gray-600" x-text="status.label"></p>
                             <div class="flex items-center mt-2" x-show="status.type === 'status'">
                                 <span class="status-dot" :class="getStatusClass(systemStatus[status.key])"></span>
-                                <span class="text-sm font-semibold" x-text="systemStatus[status.key] ? status.trueText : status.falseText"></span>
+                                <span class="text-xs sm:text-sm font-semibold" x-text="systemStatus[status.key] ? status.trueText : status.falseText"></span>
                             </div>
                             <div class="mt-2" x-show="status.type === 'count'">
-                                <span class="text-lg font-bold text-gray-900" x-text="systemStatus[status.key] || 0"></span>
+                                <span class="text-base sm:text-lg font-bold text-gray-900" x-text="systemStatus[status.key] || 0"></span>
                             </div>
                         </div>
-                        <div class="text-2xl" x-text="status.icon"></div>
+                        <div class="text-xl sm:text-2xl" x-text="status.icon"></div>
                     </div>
                 </div>
             </template>
@@ -368,14 +370,14 @@ function dashboardApp() {
         
         // Controls
         controls: {
-            timeRange: '48',  // Changed from '6' to '48'
+            timeRange: '6',  // Default to 6 hours as user expects
             selectedModule: '',
             dataType: 'preprocessed'
         },
         
         // Historical Data Controls
         historicalControls: {
-            timeRange: '48',  // Changed from '6' to '48'
+            timeRange: '168',  // Changed to '168' (1 week) for historical analysis
             selectedModule: '',
             dataType: 'preprocessed'
         },
@@ -404,6 +406,15 @@ function dashboardApp() {
             { value: '720', label: 'Last month' }
         ],
         
+        historicalTimeRangeOptions: [
+            { value: '24', label: 'Last 24 hours' },
+            { value: '48', label: 'Last 48 hours' },
+            { value: '168', label: 'Last week' },
+            { value: '720', label: 'Last month' },
+            { value: '2160', label: 'Last 3 months' },
+            { value: '4320', label: 'Last 6 months' }
+        ],
+        
         systemStatusItems: [
             { key: 'sourceDb', label: 'Database Status', type: 'status', trueText: 'Healthy', falseText: 'Error', icon: '🗄️' },
             { key: 'scheduler', label: 'Scheduler Status', type: 'status', trueText: 'Running', falseText: 'Stopped', icon: '⏰' },
@@ -426,30 +437,6 @@ function dashboardApp() {
         
         // Methods
         async init() {
-            // Set up watchers to sync controls
-            this.$watch('controls.timeRange', (value) => {
-                this.historicalControls.timeRange = value;
-            });
-            
-            this.$watch('controls.dataType', (value) => {
-                this.historicalControls.dataType = value;
-            });
-            
-            this.$watch('controls.selectedModule', (value) => {
-                this.historicalControls.selectedModule = value;
-            });
-            
-            this.$watch('historicalControls.timeRange', (value) => {
-                this.controls.timeRange = value;
-            });
-            
-            this.$watch('historicalControls.dataType', (value) => {
-                this.controls.dataType = value;
-            });
-            
-            this.$watch('historicalControls.selectedModule', (value) => {
-                this.controls.selectedModule = value;
-            });
             try {
                 this.isLoading = true;
                 this.hasError = false;
@@ -497,6 +484,57 @@ function dashboardApp() {
             }
         },
         
+        // Helper method to handle API errors including rate limiting
+        async handleApiError(response, context = 'API request') {
+            if (response.status === 429) {
+                // Rate limit exceeded
+                const errorData = await response.json().catch(() => ({}));
+                const retryAfter = response.headers.get('Retry-After') || errorData.retry_after || 60;
+                const message = errorData.message || `Rate limit exceeded. Please wait ${retryAfter} seconds before trying again.`;
+                
+                window.logger.warn(`Rate limit exceeded: ${message}`);
+                
+                // Show user-friendly rate limit message
+                this.showRateLimitMessage(message, retryAfter);
+                return false;
+            } else if (response.status >= 500) {
+                // Server error
+                window.logger.error(`Server error (${response.status}) in ${context}`);
+                return false;
+            } else if (response.status >= 400) {
+                // Client error
+                window.logger.warn(`Client error (${response.status}) in ${context}`);
+                return false;
+            }
+            return true;
+        },
+        
+        // Show rate limit message to user
+        showRateLimitMessage(message, retryAfter) {
+            // Create a temporary notification
+            const notification = document.createElement('div');
+            notification.className = 'fixed top-4 right-4 bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded z-50 max-w-sm';
+            notification.innerHTML = `
+                <div class="flex items-center">
+                    <span class="text-yellow-500 mr-2">⚠️</span>
+                    <div>
+                        <div class="font-medium">Rate Limit Exceeded</div>
+                        <div class="text-sm">${message}</div>
+                        <div class="text-xs mt-1">Retry in ${retryAfter} seconds</div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Remove notification after retry time
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, (retryAfter + 5) * 1000);
+        },
+        
         async loadInitialData() {
             await Promise.all([
                 this.loadSystemStatus(),
@@ -505,34 +543,22 @@ function dashboardApp() {
                 this.loadModules()
             ]);
             
-            // Load sensor data and predictions, then update charts
-            await this.loadSensorData();
-            await this.loadSensorData('historical'); // Also load historical data
-            await this.loadPredictions();
+                            // Load sensor data and predictions
+                await this.loadSensorData('regular');
+                await this.loadPredictions();
             
             // Update charts after data is loaded
             if (this.sensorData.length > 0 && !this.chartsDisabled) {
-                if (this.temperatureChart) {
-                    try {
-                        this.updateChart('Temperature');
-                    } catch (error) {
-                        console.error('Failed to update temperature chart:', error);
+                ['Temperature', 'Humidity', 'Pressure'].forEach(chartType => {
+                    const chart = this[chartType.toLowerCase() + 'Chart'];
+                    if (chart) {
+                        try {
+                            this.updateChart(chartType);
+                        } catch (error) {
+                            console.error(`Failed to update ${chartType.toLowerCase()} chart:`, error);
+                        }
                     }
-                }
-                if (this.humidityChart) {
-                    try {
-                        this.updateChart('Humidity');
-                    } catch (error) {
-                        console.error('Failed to update humidity chart:', error);
-                    }
-                }
-                if (this.pressureChart) {
-                    try {
-                        this.updateChart('Pressure');
-                    } catch (error) {
-                        console.error('Failed to update pressure chart:', error);
-                    }
-                }
+                });
             }
             
             this.updateLastUpdateTime();
@@ -541,6 +567,11 @@ function dashboardApp() {
         async loadSystemStatus() {
             try {
                 const response = await fetch('/api/stats');
+                
+                if (!await this.handleApiError(response, 'System status')) {
+                    return;
+                }
+                
                 const data = await response.json();
                 
                 // Check if source database is working
@@ -573,6 +604,12 @@ function dashboardApp() {
                 
                 // Try preprocessed data first
                 let response = await fetch('/api/preprocessed-data?hours_back=1&limit=1');
+                
+                if (!await this.handleApiError(response, 'Current weather (preprocessed)')) {
+                    this.currentWeatherError = 'Rate limit exceeded - please wait before retrying';
+                    return;
+                }
+                
                 let data = await response.json();
                 
                 if (data.length > 0) {
@@ -588,6 +625,12 @@ function dashboardApp() {
                 } else {
                     // Fallback to source data
                     response = await fetch('/api/sensor-data?hours=1&limit=1');
+                    
+                    if (!await this.handleApiError(response, 'Current weather (source)')) {
+                        this.currentWeatherError = 'Rate limit exceeded - please wait before retrying';
+                        return;
+                    }
+                    
                     data = await response.json();
                     if (data.length > 0) {
                         this.currentWeather = {
@@ -621,6 +664,11 @@ function dashboardApp() {
         async loadModelMetrics() {
             try {
                 const response = await fetch('/api/model/benchmark');
+                
+                if (!await this.handleApiError(response, 'Model metrics')) {
+                    return;
+                }
+                
                 if (response.ok) {
                     const data = await response.json();
                     this.modelMetrics = {
@@ -642,6 +690,11 @@ function dashboardApp() {
             try {
                 // Use the time range for predictions as well, not just forecast hours
                 const response = await fetch(`/api/predictions?hours=${this.controls.timeRange}`);
+                
+                if (!await this.handleApiError(response, 'Predictions')) {
+                    return;
+                }
+                
                 if (!response.ok) {
                     console.warn('Failed to load predictions:', response.status);
                     this.recentPredictions = [];
@@ -679,10 +732,11 @@ function dashboardApp() {
             }
         },
         
-        async loadSensorData(controlSet = 'controls') {
+        async loadSensorData(type = 'regular') {
             try {
-                const controls = controlSet === 'historical' ? this.historicalControls : this.controls;
-                window.logger.debug(`Loading sensor data with ${controlSet}:`, controls);
+                // Use historical controls for historical data, regular controls for regular data
+                const controls = type === 'historical' ? this.historicalControls : this.controls;
+                window.logger.debug(`Loading sensor data (${type}):`, controls);
                 
                 const moduleParam = controls.selectedModule ? `&module_id=${controls.selectedModule}` : '';
                 
@@ -700,6 +754,10 @@ function dashboardApp() {
                 
                 window.logger.debug('Fetching sensor data from:', url);
                 
+                if (!await this.handleApiError(response, `Sensor data (${controls.dataType})`)) {
+                    return;
+                }
+                
                 if (!response.ok) {
                     console.warn('Failed to load sensor data:', response.status);
                     this.sensorData = [];
@@ -716,70 +774,25 @@ function dashboardApp() {
                     const endTime = new Date(sortedData[sortedData.length - 1].timestamp);
                     window.logger.debug('Time range:', startTime, 'to', endTime);
                     
-                    // Additional debugging for raw source data
-                    if (controls.dataType === 'source') {
-                        const timeSpan = (endTime - startTime) / (1000 * 60 * 60); // hours
-                        const avgInterval = timeSpan / (sortedData.length - 1); // hours between points
-                        window.logger.debug(`Raw source data: ${sortedData.length} points over ${timeSpan.toFixed(1)} hours (avg interval: ${avgInterval.toFixed(2)} hours)`);
-                        
-                        // Check for data gaps
-                        const gaps = [];
-                        for (let i = 1; i < sortedData.length; i++) {
-                            const prevTime = new Date(sortedData[i-1].timestamp);
-                            const currTime = new Date(sortedData[i].timestamp);
-                            const gap = (currTime - prevTime) / (1000 * 60 * 60); // hours
-                            if (gap > 2) { // Gap larger than 2 hours
-                                gaps.push({
-                                    from: prevTime,
-                                    to: currTime,
-                                    gap: gap
-                                });
-                            }
-                        }
-                        if (gaps.length > 0) {
-                            window.logger.warn(`Found ${gaps.length} data gaps in raw source data:`, gaps);
-                        }
-                        
-                        // Log module distribution if no specific module selected
-                        if (!controls.selectedModule) {
-                            const moduleCounts = {};
-                            sortedData.forEach(item => {
-                                const module = item.module || 'unknown';
-                                moduleCounts[module] = (moduleCounts[module] || 0) + 1;
-                            });
-                            window.logger.debug('Module distribution:', moduleCounts);
-                        }
-                    }
+
                 }
                 this.sensorData = sortedData;
                 
-                // Update individual charts if they're ready and not disabled
+                // Update charts if data is available
                 if (this.sensorData.length > 0 && !this.chartsDisabled) {
-                    window.logger.debug('Updating individual charts with', this.sensorData.length, 'data points');
-                    if (this.temperatureChart) {
-                        try {
-                            this.updateChart('Temperature');
-                        } catch (error) {
-                            console.error('Failed to update temperature chart:', error);
+                    ['Temperature', 'Humidity', 'Pressure'].forEach(chartType => {
+                        const chart = this[chartType.toLowerCase() + 'Chart'];
+                        if (chart) {
+                            try {
+                                this.updateChart(chartType);
+                            } catch (error) {
+                                console.error(`Failed to update ${chartType.toLowerCase()} chart:`, error);
+                            }
                         }
-                    }
-                    if (this.humidityChart) {
-                        try {
-                            this.updateChart('Humidity');
-                        } catch (error) {
-                            console.error('Failed to update humidity chart:', error);
-                        }
-                    }
-                    if (this.pressureChart) {
-                        try {
-                            this.updateChart('Pressure');
-                        } catch (error) {
-                            console.error('Failed to update pressure chart:', error);
-                        }
-                    }
+                    });
                 }
                 
-                // Calculate weather trends for current conditions
+                // Calculate weather trends for current conditions (use main sensor data)
                 if (this.sensorData.length > 1 && this.currentWeather.temperature) {
                     this.calculateWeatherTrends();
                 }
@@ -792,6 +805,11 @@ function dashboardApp() {
         async loadModules() {
             try {
                 const response = await fetch('/api/modules');
+                
+                if (!await this.handleApiError(response, 'Modules')) {
+                    return;
+                }
+                
                 const data = await response.json();
                 this.availableModules = data.modules || [];
             } catch (error) {
@@ -802,20 +820,10 @@ function dashboardApp() {
         setupCharts() {
             window.logger.info('Setting up charts...');
             
-            // Check if charts are disabled
-            if (this.chartsDisabled) {
-                window.logger.info('Charts are disabled, skipping initialization');
-                return;
-            }
-            
-            // Check if Plotly is available
-            if (typeof Plotly === 'undefined') {
-                window.logger.error('Plotly is not loaded');
+            if (this.chartsDisabled || typeof Plotly === 'undefined') {
                 this.chartsDisabled = true;
                 return;
             }
-            
-            window.logger.info('Plotly is available, proceeding with chart setup');
             
             // Define config for all charts
             const config = {
@@ -825,7 +833,6 @@ function dashboardApp() {
                 displaylogo: false
             };
             
-            // Predictions Chart
             const predictionsCtx = document.getElementById('predictionsChart');
             if (!predictionsCtx) {
                 console.error('Predictions chart canvas not found');
@@ -833,10 +840,7 @@ function dashboardApp() {
                 return;
             }
             
-            window.logger.debug('Predictions chart container found:', predictionsCtx);
-            
             try {
-                // Create initial empty chart with proper Plotly structure
                 const predictionsData = [
                     {
                         x: [],
@@ -905,29 +909,23 @@ function dashboardApp() {
                         xanchor: 'center',
                         bgcolor: 'rgba(255,255,255,0.8)'
                     },
-                    height: 400,
+                    height: Math.min(400, window.innerHeight * 0.4),
                     margin: { t: 60, b: 60, l: 60, r: 40 },
                     plot_bgcolor: 'rgba(255,255,255,0.9)',
-                    paper_bgcolor: 'rgba(255,255,255,0.9)'
+                    paper_bgcolor: 'rgba(255,255,255,0.9)',
+                    shapes: []
                 };
-                
-                window.logger.debug('Creating predictions chart with data:', predictionsData);
-                window.logger.debug('Layout:', predictionsLayout);
                 
                 Plotly.newPlot(predictionsCtx, predictionsData, predictionsLayout, config);
                 this.predictionsChart = predictionsCtx;
-                window.logger.info('Predictions chart initialized successfully');
                 
 
             } catch (error) {
                 console.error('Error creating predictions chart:', error);
                 this.predictionsChart = null;
-                this.chartsDisabled = true;
-                this.disablePredictionsChart();
             }
             
-                        // Temperature Chart
-            const temperatureCtx = document.getElementById('temperatureChart');
+                                                const temperatureCtx = document.getElementById('temperatureChart');
             if (!temperatureCtx) {
                 console.error('Temperature chart canvas not found');
                 return;
@@ -978,7 +976,7 @@ function dashboardApp() {
                         autorange: true
                     },
                     hovermode: 'x unified',
-                    height: 300,
+                    height: Math.min(300, window.innerHeight * 0.3),
                     margin: { t: 40, b: 40, l: 50, r: 20 },
                     plot_bgcolor: 'rgba(255,255,255,0.9)',
                     paper_bgcolor: 'rgba(255,255,255,0.9)'
@@ -988,11 +986,9 @@ function dashboardApp() {
                 this.temperatureChart = temperatureCtx;
             } catch (error) {
                 console.error('Error creating temperature chart:', error);
-                this.temperatureChart = null;
             }
             
-                        // Humidity Chart
-            const humidityCtx = document.getElementById('humidityChart');
+                                                const humidityCtx = document.getElementById('humidityChart');
             if (!humidityCtx) {
                 console.error('Humidity chart canvas not found');
                 return;
@@ -1043,7 +1039,7 @@ function dashboardApp() {
                         autorange: true
                     },
                     hovermode: 'x unified',
-                    height: 300,
+                    height: Math.min(300, window.innerHeight * 0.3),
                     margin: { t: 40, b: 40, l: 50, r: 20 },
                     plot_bgcolor: 'rgba(255,255,255,0.9)',
                     paper_bgcolor: 'rgba(255,255,255,0.9)'
@@ -1053,11 +1049,9 @@ function dashboardApp() {
                 this.humidityChart = humidityCtx;
             } catch (error) {
                 console.error('Error creating humidity chart:', error);
-                this.humidityChart = null;
             }
             
-                        // Pressure Chart
-            const pressureCtx = document.getElementById('pressureChart');
+                                                const pressureCtx = document.getElementById('pressureChart');
             if (!pressureCtx) {
                 console.error('Pressure chart canvas not found');
                 return;
@@ -1086,7 +1080,7 @@ function dashboardApp() {
                 const pressureLayout = {
                     title: {
                         text: 'Pressure Over Time',
-                        font: { size: 14 }
+                    font: { size: 14 }
                     },
                     xaxis: {
                         title: {
@@ -1108,7 +1102,7 @@ function dashboardApp() {
                         autorange: true
                     },
                     hovermode: 'x unified',
-                    height: 300,
+                    height: Math.min(300, window.innerHeight * 0.3),
                     margin: { t: 40, b: 40, l: 50, r: 20 },
                     plot_bgcolor: 'rgba(255,255,255,0.9)',
                     paper_bgcolor: 'rgba(255,255,255,0.9)'
@@ -1118,7 +1112,6 @@ function dashboardApp() {
                 this.pressureChart = pressureCtx;
             } catch (error) {
                 console.error('Error creating pressure chart:', error);
-                this.pressureChart = null;
             }
         },
         
@@ -1129,9 +1122,18 @@ function dashboardApp() {
             }
             
             try {
-                // Use all available data instead of limiting to 50 points
-                const historicalData = this.sensorData && this.sensorData.length > 0 ? this.sensorData : [];
-                const predictionData = this.recentPredictions && this.recentPredictions.length > 0 ? this.recentPredictions : [];
+                // Always use main controls for predictions chart - it should respect user's selected time range
+                const controls = this.controls;
+                const timeRangeHours = parseInt(controls.timeRange);
+                const cutoffTime = new Date(Date.now() - timeRangeHours * 60 * 60 * 1000);
+                
+                // Filter historical data using main controls data
+                const historicalData = this.sensorData && this.sensorData.length > 0 ? 
+                    this.sensorData.filter(d => new Date(d.timestamp) >= cutoffTime) : [];
+                
+                // Filter prediction data
+                const predictionData = this.recentPredictions && this.recentPredictions.length > 0 ? 
+                    this.recentPredictions.filter(d => new Date(d.timestamp) >= cutoffTime) : [];
                 
                 // Create data arrays for Plotly with proper timestamp handling
                 const historicalX = historicalData.map(d => new Date(d.timestamp));
@@ -1146,38 +1148,12 @@ function dashboardApp() {
                     return;
                 }
                 
-                // Additional debugging for raw source data
-                if (this.controls.dataType === 'source' && historicalData.length > 0) {
-                    const startTime = historicalX[0];
-                    const endTime = historicalX[historicalX.length - 1];
-                    const timeSpan = (endTime - startTime) / (1000 * 60 * 60); // hours
-                    const avgInterval = timeSpan / (historicalX.length - 1); // hours between points
-                    
-                    window.logger.debug(`Predictions chart - Raw source data: ${historicalX.length} points over ${timeSpan.toFixed(1)} hours (avg interval: ${avgInterval.toFixed(2)} hours)`);
-                    
-                    // Check for data quality issues
-                    if (avgInterval > 1) {
-                        window.logger.warn(`Large intervals detected in raw source data: ${avgInterval.toFixed(2)} hours average`);
-                    }
-                    
-                    // Log module information if available
-                    if (historicalData[0].module) {
-                        const moduleCounts = {};
-                        historicalData.forEach(item => {
-                            const module = item.module || 'unknown';
-                            moduleCounts[module] = (moduleCounts[module] || 0) + 1;
-                        });
-                        window.logger.debug('Predictions chart - Module distribution:', moduleCounts);
-                    }
-                }
+
                 
-                // Always use replot for better timestamp handling and to ensure proper updates
                 this.replotPredictionsChart(historicalX, historicalY, predictionX, predictionY);
                 
             } catch (error) {
                 console.error('Error updating predictions chart:', error);
-                // Disable the chart if it keeps failing
-                this.disablePredictionsChart();
             }
         },
         
@@ -1219,6 +1195,8 @@ function dashboardApp() {
                     }
                 ];
                 
+                const shapes = [];
+                
                 const layout = {
                     title: {
                         text: 'Temperature Predictions vs Historical Data',
@@ -1251,10 +1229,11 @@ function dashboardApp() {
                         xanchor: 'center',
                         bgcolor: 'rgba(255,255,255,0.8)'
                     },
-                    height: 400,
+                    height: Math.min(400, window.innerHeight * 0.4),
                     margin: { t: 60, b: 60, l: 60, r: 40 },
                     plot_bgcolor: 'rgba(255,255,255,0.9)',
-                    paper_bgcolor: 'rgba(255,255,255,0.9)'
+                    paper_bgcolor: 'rgba(255,255,255,0.9)',
+                    shapes: shapes
                 };
                 
                 const config = {
@@ -1268,7 +1247,6 @@ function dashboardApp() {
 
             } catch (error) {
                 console.error('Error replotting predictions chart:', error);
-                this.disablePredictionsChart();
             }
         },
         
@@ -1293,11 +1271,26 @@ function dashboardApp() {
                     return;
                 }
                 
-                window.logger.logData(this.sensorData.length, `${chartType} chart data points`);
+                // Use historical controls for historical charts
+                const controls = this.historicalControls;
+                const timeRangeHours = parseInt(controls.timeRange);
+                const cutoffTime = new Date(Date.now() - timeRangeHours * 60 * 60 * 1000);
+                
+                const filteredData = this.sensorData.filter(d => {
+                    const dataTime = new Date(d.timestamp);
+                    return dataTime >= cutoffTime;
+                });
+                
+                window.logger.logData(filteredData.length, `${chartType} chart data points (filtered for ${timeRangeHours} hours)`);
+                
+                if (filteredData.length === 0) {
+                    window.logger.warn(`No data within ${timeRangeHours} hours for ${chartType} chart`);
+                    return;
+                }
                 
                 // Create data arrays for Plotly with proper timestamp handling
-                const x = this.sensorData.map(d => new Date(d.timestamp));
-                const values = this.sensorData.map(d => Number(d[chart.field]) || 0);
+                const x = filteredData.map(d => new Date(d.timestamp));
+                const values = filteredData.map(d => Number(d[chart.field]) || 0);
                 
                 // Replot the chart
                 this.replotChart(chart, x, values);
@@ -1310,7 +1303,6 @@ function dashboardApp() {
         
         replotChart(chart, x, values) {
             try {
-                window.logger.debug(`Replotting ${chart.name} chart with ${x.length} data points`);
                 
                 const plotData = [
                     {
@@ -1356,7 +1348,7 @@ function dashboardApp() {
                         autorange: true
                     },
                     hovermode: 'x unified',
-                    height: 300,
+                    height: Math.min(300, window.innerHeight * 0.3),
                     margin: { t: 40, b: 40, l: 50, r: 20 },
                     plot_bgcolor: 'rgba(255,255,255,0.9)',
                     paper_bgcolor: 'rgba(255,255,255,0.9)'
@@ -1371,75 +1363,64 @@ function dashboardApp() {
                 
                 const chartElement = this[chart.id];
                 Plotly.newPlot(chartElement, plotData, layout, config);
-                window.logger.info(`${chart.name} chart replotted successfully`);
                 
             } catch (error) {
-                window.logger.logError(error, `${chart.name} chart replot failed`);
-                this.disableChart(chart.id);
+                console.error(`${chart.name} chart replot failed:`, error);
             }
         },
         
-        disablePredictionsChart() {
-            window.logger.warn('Disabling predictions chart due to errors');
-            if (this.predictionsChart) {
-                try {
-                    Plotly.purge(this.predictionsChart);
-                } catch (e) {
-                    window.logger.logError(e, 'Error purging predictions chart');
-                }
-                this.predictionsChart = null;
-            }
-            // Hide the chart container
-            const container = document.querySelector('.chart-container');
-            if (container) {
-                container.innerHTML = '<div class="text-center py-8 text-gray-500">Predictions chart temporarily disabled due to data issues</div>';
-            }
-        },
+
         
-        disableChart(chartId) {
-            const chart = this.historicalCharts.find(c => c.id === chartId);
-            if (chart) {
-                window.logger.warn(`Disabling ${chart.name} chart due to errors`);
-                const chartElement = this[chartId];
-                if (chartElement) {
-                    try {
-                        Plotly.purge(chartElement);
-                    } catch (e) {
-                        window.logger.logError(e, `Error purging ${chart.name} chart`);
-                    }
-                    this[chartId] = null;
-                }
-            }
-        },
+
         
         async updateData() {
-            await this.loadSensorData();
-            await this.loadPredictions(); // Also load predictions for the time range
+            await this.loadSensorData('regular');
+            await this.loadPredictions();
             await this.loadCurrentWeather();
             
-            // Update individual charts if they're ready and not disabled
+            // Update charts if data is available
             if (this.sensorData.length > 0 && !this.chartsDisabled) {
-                if (this.temperatureChart) {
-                    try {
-                        this.updateChart('Temperature');
-                    } catch (error) {
-                        console.error('Failed to update temperature chart:', error);
+                ['Temperature', 'Humidity', 'Pressure'].forEach(chartType => {
+                    const chart = this[chartType.toLowerCase() + 'Chart'];
+                    if (chart) {
+                        try {
+                            this.updateChart(chartType);
+                        } catch (error) {
+                            console.error(`Failed to update ${chartType.toLowerCase()} chart:`, error);
+                        }
                     }
+                });
+            }
+            
+            // Update predictions chart if ready and not disabled
+            if (this.predictionsChart && this.recentPredictions.length > 0 && !this.chartsDisabled) {
+                try {
+                    this.updatePredictionsChart();
+                } catch (error) {
+                    console.error('Failed to update predictions chart:', error);
                 }
-                if (this.humidityChart) {
-                    try {
-                        this.updateChart('Humidity');
-                    } catch (error) {
-                        console.error('Failed to update humidity chart:', error);
+            }
+        },
+        
+        // New method specifically for time control updates - only updates what's needed
+        async updateTimeControl() {
+            // Only update sensor data and predictions when time control changes
+            // Don't update current weather as it's not affected by time range
+            await this.loadSensorData('regular');
+            await this.loadPredictions();
+            
+            // Update charts if data is available
+            if (this.sensorData.length > 0 && !this.chartsDisabled) {
+                ['Temperature', 'Humidity', 'Pressure'].forEach(chartType => {
+                    const chart = this[chartType.toLowerCase() + 'Chart'];
+                    if (chart) {
+                        try {
+                            this.updateChart(chartType);
+                        } catch (error) {
+                            console.error(`Failed to update ${chartType.toLowerCase()} chart:`, error);
+                        }
                     }
-                }
-                if (this.pressureChart) {
-                    try {
-                        this.updateChart('Pressure');
-                    } catch (error) {
-                        console.error('Failed to update pressure chart:', error);
-                    }
-                }
+                });
             }
             
             // Update predictions chart if ready and not disabled
