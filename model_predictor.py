@@ -172,37 +172,108 @@ class ModelPredictor:
         except Exception as e:
             logger.error(f"Error saving model: {e}")
 
-    def prepare_training_data(self, df):
-        """Prepare training data for LSTM from dataframe"""
-        if df.empty or len(df) < self.sequence_length + 1:
-            logger.warning("Insufficient data for training")
+    def prepare_training_data(self, df, fit_scaler=True, min_sequences=10):
+        """Prepare training data for LSTM from dataframe.
+        
+        This method transforms raw weather data into sequences suitable for LSTM training.
+        It performs the following steps:
+        1. Validates data sufficiency (requires at least sequence_length + 1 samples)
+        2. Validates required columns exist in the dataframe
+        3. Enhances data with time-based features (hour, month cyclical encodings)
+        4. Extracts available features (temperature, humidity, pressure, time features)
+        5. Handles missing values using forward fill then backward fill
+        6. Scales features using StandardScaler (fits only if fit_scaler=True)
+        7. Creates sliding window sequences of length sequence_length for input (X)
+        8. Creates corresponding target values (y) for temperature prediction
+        9. Validates final sequence count (requires at least min_sequences)
+        
+        Args:
+            df: DataFrame containing weather data with columns like temperature, humidity, pressure
+            fit_scaler: Whether to fit the scaler (True for training, False for inference)
+            min_sequences: Minimum number of sequences required for training
+            
+        Returns:
+            tuple: (X_seq, y_seq) where X_seq is 3D array (samples, sequence_length, features)
+                   and y_seq is 1D array of target temperatures, or (None, None) if insufficient data
+        """
+        # Validate input data
+        if df.empty:
+            logger.warning("Empty dataframe provided")
             return None, None
+            
+        if len(df) < self.sequence_length + 1:
+            logger.warning(f"Insufficient data: {len(df)} samples, need at least {self.sequence_length + 1}")
+            return None, None
+            
+        # Validate required columns
+        required_columns = ['temperature']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            logger.error(f"Missing required columns: {missing_columns}")
+            return None, None
+            
         try:
+            # Add time features
             df_enhanced = self._add_time_features(df)
-            features = [
+            
+            # Define feature columns in order of preference
+            feature_columns = [
                 'temperature', 'humidity', 'pressure',
                 'hour_sin', 'hour_cos', 'month_sin', 'month_cos'
             ]
-            available_features = [f for f in features if f in df_enhanced.columns]
-            if len(available_features) < 3:
-                logger.warning("Insufficient features for training")
+            
+            # Select available features, maintaining order
+            available_features = [f for f in feature_columns if f in df_enhanced.columns]
+            
+            if not available_features:
+                logger.error("No features available for training")
                 return None, None
+                
+            logger.info(f"Using features: {available_features}")
+            
+            # Extract features and target
             X = df_enhanced[available_features].values
-            X = np.nan_to_num(X, nan=0.0)
             y = df_enhanced['temperature'].values
+            
+            # Handle missing values more intelligently
+            if np.isnan(X).any():
+                logger.info("Handling missing values in features")
+                # Forward fill then backward fill for time series data
+                X = pd.DataFrame(X, columns=available_features).fillna(method='ffill').fillna(method='bfill').values
+                
+            if np.isnan(y).any():
+                logger.info("Handling missing values in target")
+                y = pd.Series(y).fillna(method='ffill').fillna(method='bfill').values
+            
             # Scale features
-            X_scaled = self.scaler.fit_transform(X)
-            # Create sequences
-            X_seq, y_seq = [], []
-            for i in range(len(X_scaled) - self.sequence_length):
-                X_seq.append(X_scaled[i:i+self.sequence_length])
-                y_seq.append(y[i+self.sequence_length])
-            X_seq = np.array(X_seq)
-            y_seq = np.array(y_seq)
-            if len(X_seq) < 10:
-                logger.warning("Insufficient data after creating sequences")
+            if fit_scaler:
+                X_scaled = self.scaler.fit_transform(X)
+                logger.info("Fitted scaler on training data")
+            else:
+                X_scaled = self.scaler.transform(X)
+                logger.info("Applied existing scaler to data")
+            
+            # Create sequences more efficiently
+            n_samples = len(X_scaled) - self.sequence_length
+            if n_samples <= 0:
+                logger.warning("No samples available after sequence creation")
                 return None, None
+                
+            # Pre-allocate arrays for better memory efficiency
+            X_seq = np.zeros((n_samples, self.sequence_length, len(available_features)))
+            y_seq = np.zeros(n_samples)
+            
+            for i in range(n_samples):
+                X_seq[i] = X_scaled[i:i+self.sequence_length]
+                y_seq[i] = y[i+self.sequence_length]
+            
+            if len(X_seq) < min_sequences:
+                logger.warning(f"Insufficient sequences: {len(X_seq)}, need at least {min_sequences}")
+                return None, None
+                
+            logger.info(f"Created {len(X_seq)} sequences with {len(available_features)} features")
             return X_seq, y_seq
+            
         except Exception as e:
             logger.error(f"Error preparing training data: {e}")
             return None, None
@@ -229,7 +300,8 @@ class ModelPredictor:
             if df.isnull().any().any():
                 logger.error("Training data contains NaN values! Please check preprocessing.")
                 return False
-            X, y = self.prepare_training_data(df)
+
+            X, y = self.prepare_training_data(df, fit_scaler=True)
             if X is None or y is None:
                 logger.error("Could not prepare training data")
                 return False
@@ -294,32 +366,84 @@ class ModelPredictor:
             return False
 
     def prepare_input_tensor(self, df):
-        """Prepare input tensor for LSTM from dataframe (last sequence_length rows)"""
-        if df.empty or len(df) < self.sequence_length:
+        """Prepare input tensor for LSTM from dataframe (last sequence_length rows).
+        
+        This method prepares a single input sequence for prediction by:
+        1. Validating data sufficiency (requires at least sequence_length rows)
+        2. Adding time-based features (hour, month cyclical encodings)
+        3. Extracting available features in the same order as training
+        4. Handling missing values using forward fill then backward fill
+        5. Scaling features using the fitted scaler (if available)
+        6. Creating a single sequence tensor for prediction
+        
+        Args:
+            df: DataFrame containing weather data with columns like temperature, humidity, pressure
+            
+        Returns:
+            torch.Tensor: Input tensor of shape (1, sequence_length, features) or None if insufficient data
+        """
+        # Validate input data
+        if df.empty:
+            logger.warning("Empty dataframe provided for input tensor")
             return None
+            
+        if len(df) < self.sequence_length:
+            logger.warning(f"Insufficient data for input tensor: {len(df)} samples, need at least {self.sequence_length}")
+            return None
+            
+        # Validate required columns
+        required_columns = ['temperature']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            logger.error(f"Missing required columns for input tensor: {missing_columns}")
+            return None
+            
         try:
+            # Add time features
             df_enhanced = self._add_time_features(df)
-            features = [
+            
+            # Define feature columns in same order as training
+            feature_columns = [
                 'temperature', 'humidity', 'pressure',
                 'hour_sin', 'hour_cos', 'month_sin', 'month_cos'
             ]
-            available_features = [f for f in features if f in df_enhanced.columns]
-            if len(available_features) < 3:
-                logger.warning("No suitable features found for prediction")
+            
+            # Select available features, maintaining order
+            available_features = [f for f in feature_columns if f in df_enhanced.columns]
+            
+            if not available_features:
+                logger.error("No features available for input tensor")
                 return None
+                
+            # Extract features
             X = df_enhanced[available_features].values
-            X = np.nan_to_num(X, nan=0.0)
+            
+            # Handle missing values more intelligently
+            if np.isnan(X).any():
+                logger.info("Handling missing values in input tensor features")
+                # Forward fill then backward fill for time series data
+                X = pd.DataFrame(X, columns=available_features).fillna(method='ffill').fillna(method='bfill').values
+            
+            # Scale features if scaler is fitted
             if self.is_trained and hasattr(self.scaler, 'mean_'):
                 X_scaled = self.scaler.transform(X)
+                logger.debug("Applied fitted scaler to input tensor")
             else:
                 X_scaled = X
-            # Only last sequence_length rows
+                logger.warning("Using unscaled features for input tensor (scaler not fitted)")
+            
+            # Take only the last sequence_length rows
             if len(X_scaled) < self.sequence_length:
+                logger.warning(f"Not enough data after scaling: {len(X_scaled)} rows, need {self.sequence_length}")
                 return None
+                
             X_seq = X_scaled[-self.sequence_length:]
             X_seq = np.expand_dims(X_seq, axis=0)  # (1, seq_len, input_size)
             X_tensor = torch.FloatTensor(X_seq).to(self.device)
+            
+            logger.debug(f"Prepared input tensor with shape {X_tensor.shape}")
             return X_tensor
+            
         except Exception as e:
             logger.error(f"Error preparing input tensor: {e}")
             return None
