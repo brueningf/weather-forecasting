@@ -28,4 +28,4 @@ fi
 
 # Start the application
 echo "Starting the API server..."
-python main.py 
+python src/main.py 

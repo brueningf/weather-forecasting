@@ -42,7 +42,7 @@ class Config:
             return ["*"]
     
     # Model Configuration
-    MODEL_PATH = os.getenv('MODEL_PATH', 'models/weather_model.pkl')
+    MODEL_PATH = os.getenv('MODEL_PATH', 'model.pth')
     METRICS_PATH = os.getenv('METRICS_PATH', 'metrics.json')
     PREDICTION_INTERVAL_MINUTES = int(os.getenv('PREDICTION_INTERVAL_MINUTES', 10))
     
