@@ -2,3 +2,6 @@ __pycache__/
 venv/
 .env
 model.pth
+metrics.json
+scheduler_status.flag
+timeseries_backup.sql
