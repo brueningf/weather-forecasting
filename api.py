@@ -64,28 +64,28 @@ def cache_response(expiration_seconds=300):
             # Try to get from cache
             cached_result = cache.get(cache_key)
             if cached_result is not None:
-                logger.info(f"Cache hit for {func.__name__}")
+                logger.debug(f"Cache hit for {func.__name__}")
                 return cached_result
             
             # Execute function and cache result
             result = await func(*args, **kwargs)
             cache.set(cache_key, result)
-            logger.info(f"Cache miss for {func.__name__}, cached result")
+            logger.debug(f"Cache miss for {func.__name__}, cached result")
             return result
         return wrapper
     return decorator
 
-# Initialize FastAPI app
 app = FastAPI(
     title="Weather Forecasting API",
     description="API for weather prediction with scheduled forecasting",
     version="1.0.0"
 )
 
-# Add CORS middleware
+config = Config()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=Config.allowed_origins,
+    allow_origins=config.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -98,7 +98,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # Initialize components
-config = Config()
 weather_data_controller = WeatherDataController()
 model_predictor = ModelPredictor()
 # Use the global scheduler instance from scheduler module
@@ -186,7 +185,7 @@ async def get_predictions(hours: int = 48):
 async def get_sensor_data(hours: int = 24, module_id: Optional[str] = None):
     """Get actual sensor data for the specified number of hours"""
     try:
-        logger.info(f"Fetching sensor data with hours={hours}, module_id={module_id}")
+        logger.debug(f"Fetching sensor data with hours={hours}, module_id={module_id}")
         # Get raw sensor data using the correct method name
         raw_data = weather_data_controller.fetch_recent_sensor_data(hours=hours, module_id=module_id)
         
@@ -236,7 +235,7 @@ async def get_available_modules():
 async def get_preprocessed_data(hours_back: Optional[int] = None, limit: Optional[int] = None):
     """Get preprocessed data for analysis"""
     try:
-        logger.info(f"Fetching preprocessed data with hours_back={hours_back}, limit={limit}")
+        logger.debug(f"Fetching preprocessed data with hours_back={hours_back}, limit={limit}")
         df = weather_data_controller.fetch_preprocessed_data(hours_back=hours_back, limit=limit)
         
         if df.empty:

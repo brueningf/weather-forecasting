@@ -108,7 +108,7 @@ class DatabaseManager:
     def get_latest_sensor_data(self, hours=24, module_id=None):
         """Get latest sensor data from source database (pandas)"""
         try:
-            logger.info(f"Getting sensor data with hours={hours}, module_id={module_id}")
+            logger.debug(f"Getting sensor data with hours={hours}, module_id={module_id}")
             cutoff_time = datetime.now() - timedelta(hours=hours)
             if module_id:
                 query = f"""
@@ -129,14 +129,14 @@ class DatabaseManager:
             
             # Log data distribution for debugging
             if not df.empty:
-                logger.info(f"Raw sensor data: {len(df)} records from {df['timestamp'].min()} to {df['timestamp'].max()}")
-                logger.info(f"Requested hours: {hours}, actual time span: {(df['timestamp'].max() - df['timestamp'].min()).total_seconds() / 3600:.1f} hours")
+                logger.debug(f"Raw sensor data: {len(df)} records from {df['timestamp'].min()} to {df['timestamp'].max()}")
+                logger.debug(f"Requested hours: {hours}, actual time span: {(df['timestamp'].max() - df['timestamp'].min()).total_seconds() / 3600:.1f} hours")
                 if module_id:
-                    logger.info(f"Module {module_id}: {len(df)} records")
+                    logger.debug(f"Module {module_id}: {len(df)} records")
                 else:
                     # Show distribution across modules
                     module_counts = df['module'].value_counts()
-                    logger.info(f"Module distribution: {module_counts.to_dict()}")
+                    logger.debug(f"Module distribution: {module_counts.to_dict()}")
             else:
                 logger.warning(f"No raw sensor data found for hours={hours}, module_id={module_id}")
             
@@ -204,7 +204,7 @@ class DatabaseManager:
             # Add debugging
             total_count = session.query(PreprocessedData).count()
             logger.info(f"Total preprocessed records in database: {total_count}")
-            logger.info(f"Requested hours_back: {hours_back}, batch_id: {batch_id}, limit: {limit}")
+            logger.debug(f"Requested hours_back: {hours_back}, batch_id: {batch_id}, limit: {limit}")
             if batch_id:
                 query = query.filter(PreprocessedData.batch_id == batch_id)
                 logger.debug(f"Filtering by batch_id: {batch_id}")
