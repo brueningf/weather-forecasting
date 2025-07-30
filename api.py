@@ -18,6 +18,8 @@ import numpy as np
 import io
 import base64
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+import time
+from functools import wraps
 
 from weather_data_controller import WeatherDataController
 from model_predictor import ModelPredictor
@@ -26,6 +28,52 @@ from config import Config
 from analysis import router as analysis_router
 
 logger = logging.getLogger(__name__)
+
+# Simple cache implementation
+class SimpleCache:
+    def __init__(self):
+        self.cache = {}
+    
+    def get(self, key):
+        if key in self.cache:
+            data, timestamp = self.cache[key]
+            # 5 minute cache expiration
+            if time.time() - timestamp < 300:
+                return data
+            else:
+                del self.cache[key]
+        return None
+    
+    def set(self, key, value):
+        self.cache[key] = (value, time.time())
+    
+    def clear(self):
+        self.cache.clear()
+
+# Global cache instance
+cache = SimpleCache()
+
+def cache_response(expiration_seconds=300):
+    """Decorator to cache API responses for specified duration"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            # Create cache key from function name and arguments
+            cache_key = f"{func.__name__}:{str(args)}:{str(sorted(kwargs.items()))}"
+            
+            # Try to get from cache
+            cached_result = cache.get(cache_key)
+            if cached_result is not None:
+                logger.info(f"Cache hit for {func.__name__}")
+                return cached_result
+            
+            # Execute function and cache result
+            result = await func(*args, **kwargs)
+            cache.set(cache_key, result)
+            logger.info(f"Cache miss for {func.__name__}, cached result")
+            return result
+        return wrapper
+    return decorator
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -37,7 +85,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=Config.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -108,6 +156,7 @@ async def dashboard(request: Request):
     })
 
 @app.get("/api/predictions", response_model=List[PredictionResponse])
+@cache_response(expiration_seconds=300)  # Cache for 5 minutes
 async def get_predictions(hours: int = 48):
     """Get weather predictions for the specified number of hours (default: 48 hours)"""
     try:
@@ -133,6 +182,7 @@ async def get_predictions(hours: int = 48):
         raise HTTPException(status_code=500, detail="Error retrieving predictions")
 
 @app.get("/api/sensor-data", response_model=List[ActualTemperatureResponse])
+@cache_response(expiration_seconds=300)  # Cache for 5 minutes
 async def get_sensor_data(hours: int = 24, module_id: Optional[str] = None):
     """Get actual sensor data for the specified number of hours"""
     try:
@@ -161,6 +211,7 @@ async def get_sensor_data(hours: int = 24, module_id: Optional[str] = None):
         raise HTTPException(status_code=500, detail="Error retrieving sensor data")
 
 @app.get("/api/modules")
+@cache_response(expiration_seconds=300)  # Cache for 5 minutes
 async def get_available_modules():
     """Get list of available sensor modules"""
     try:
@@ -232,6 +283,7 @@ async def get_preprocessed_stats():
         raise HTTPException(status_code=500, detail="Error retrieving preprocessed statistics")
 
 @app.get("/api/stats")
+@cache_response(expiration_seconds=300)  # Cache for 5 minutes
 async def get_stats():
     """Get comprehensive statistics about the system, including system status."""
     try:
@@ -403,5 +455,30 @@ async def get_model_benchmark():
 async def temperature_page(request: Request):
     """Serve the temperature (actual vs predicted) graph HTML page"""
     return templates.TemplateResponse("temperature-graph.html", {"request": request}) 
+
+@app.post("/api/cache/clear")
+async def clear_cache():
+    """Clear the API cache"""
+    try:
+        cache.clear()
+        logger.info("Cache cleared manually")
+        return {"message": "Cache cleared successfully", "status": "success"}
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}")
+        raise HTTPException(status_code=500, detail="Error clearing cache")
+
+@app.get("/api/cache/status")
+async def get_cache_status():
+    """Get cache status and statistics"""
+    try:
+        cache_size = len(cache.cache)
+        return {
+            "cache_size": cache_size,
+            "cache_enabled": True,
+            "expiration_seconds": 300
+        }
+    except Exception as e:
+        logger.error(f"Error getting cache status: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving cache status")
 
 app.include_router(analysis_router) 

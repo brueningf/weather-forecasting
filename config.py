@@ -24,6 +24,23 @@ class Config:
     API_PORT = int(os.getenv('API_PORT', 5000))
     API_RELOAD = os.getenv('API_RELOAD', 'true').lower() == 'true'
     
+    # CORS Configuration
+    ENVIRONMENT = os.getenv('ENVIRONMENT', 'development').lower()
+    CORS_ORIGINS = os.getenv('CORS_ORIGINS', '').split(',') if os.getenv('CORS_ORIGINS') else []
+    
+    @property
+    def allowed_origins(self):
+        """Get allowed CORS origins based on environment"""
+        if self.ENVIRONMENT == 'production':
+            # In production, use specific origins or default to weather.fredesk.com
+            if self.CORS_ORIGINS:
+                return self.CORS_ORIGINS
+            else:
+                return ['https://weather.fredesk.com', 'http://weather.fredesk.com']
+        else:
+            # In development, allow all origins
+            return ["*"]
+    
     # Model Configuration
     MODEL_PATH = os.getenv('MODEL_PATH', 'models/weather_model.pkl')
     METRICS_PATH = os.getenv('METRICS_PATH', 'metrics.json')
