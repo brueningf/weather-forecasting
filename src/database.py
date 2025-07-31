@@ -90,12 +90,23 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error saving predictions to API database: {e}")
 
-    def get_latest_predictions(self, hours=24):
+    def get_latest_predictions(self, hours=24, cutoff_time=None, window_hours=1):
         """Get latest predictions from API database using ORM"""
         try:
             session = self.Session()
-            cutoff_time = datetime.now() - timedelta(hours=hours)
-            preds = session.query(Prediction).filter(Prediction.timestamp >= cutoff_time).order_by(Prediction.timestamp.desc()).all()
+            if cutoff_time:
+                # Get predictions within a window around the cutoff time
+                start_time = cutoff_time - timedelta(hours=window_hours)
+                end_time = cutoff_time + timedelta(hours=window_hours)
+                preds = session.query(Prediction).filter(
+                    Prediction.timestamp >= start_time,
+                    Prediction.timestamp <= end_time
+                ).order_by(Prediction.timestamp.asc()).all()
+            else:
+                # Get recent predictions
+                cutoff_time_filter = datetime.now() - timedelta(hours=hours)
+                preds = session.query(Prediction).filter(Prediction.timestamp >= cutoff_time_filter).order_by(Prediction.timestamp.desc()).all()
+            
             session.close()
             if preds:
                 df = pd.DataFrame([{**{c.name: getattr(p, c.name) for c in Prediction.__table__.columns}} for p in preds])
@@ -104,6 +115,8 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error getting latest predictions from API database: {e}")
             return pd.DataFrame()
+
+
 
     def get_latest_sensor_data(self, hours=24, module_id=None):
         """Get latest sensor data from source database (pandas)"""
@@ -196,7 +209,7 @@ class DatabaseManager:
             logger.error(f"Error saving preprocessed data to API database: {e}")
             return None
 
-    def get_preprocessed_data(self, hours_back=None, batch_id=None, limit=None):
+    def get_preprocessed_data(self, hours_back=None, batch_id=None, limit=None, cutoff_time=None, window_hours=1):
         """Get preprocessed data from API database using ORM (timestamp, temperature, humidity, pressure)"""
         try:
             session = self.Session()
@@ -204,16 +217,27 @@ class DatabaseManager:
             # Add debugging
             total_count = session.query(PreprocessedData).count()
             logger.info(f"Total preprocessed records in database: {total_count}")
-            logger.debug(f"Requested hours_back: {hours_back}, batch_id: {batch_id}, limit: {limit}")
+            logger.debug(f"Requested hours_back: {hours_back}, batch_id: {batch_id}, limit: {limit}, cutoff_time: {cutoff_time}")
+            
             if batch_id:
                 query = query.filter(PreprocessedData.batch_id == batch_id)
                 logger.debug(f"Filtering by batch_id: {batch_id}")
+            elif cutoff_time:
+                # Get data within a window around the cutoff time
+                start_time = cutoff_time - timedelta(hours=window_hours)
+                end_time = cutoff_time + timedelta(hours=window_hours)
+                query = query.filter(
+                    PreprocessedData.timestamp >= start_time,
+                    PreprocessedData.timestamp <= end_time
+                )
+                logger.debug(f"Filtering by cutoff_time: {cutoff_time}, window: {start_time} to {end_time}")
             elif hours_back:
-                cutoff_time = datetime.now() - timedelta(hours=hours_back)
-                query = query.filter(PreprocessedData.timestamp >= cutoff_time)
-                logger.debug(f"Filtering by hours_back: {hours_back}, cutoff_time: {cutoff_time}")
+                cutoff_time_filter = datetime.now() - timedelta(hours=hours_back)
+                query = query.filter(PreprocessedData.timestamp >= cutoff_time_filter)
+                logger.debug(f"Filtering by hours_back: {hours_back}, cutoff_time: {cutoff_time_filter}")
             else:
                 logger.debug("No filters applied - returning all records")
+                
             query = query.order_by(PreprocessedData.timestamp)
             if limit:
                 results = query.all()[-limit:]
@@ -222,7 +246,8 @@ class DatabaseManager:
                 results = query.all()
                 logger.debug(f"Retrieved {len(results)} records")
             session.close()
-            if not results and (hours_back or batch_id):
+            
+            if not results and (hours_back or batch_id or cutoff_time):
                 logger.warning("No results found with filters. Returning empty result set.")
                 return pd.DataFrame()
             if results:

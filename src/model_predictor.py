@@ -35,7 +35,7 @@ class ModelPredictor:
         self.scaler = StandardScaler()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.is_trained = False
-        self.sequence_length = sequence_length  # e.g., use last 12 steps (2 hours if 10min freq)
+        self.sequence_length = sequence_length  # Use last 12 steps (2 hours if 10min freq)
         self.load_model()
 
     def _add_time_features(self, df):
@@ -51,15 +51,12 @@ class ModelPredictor:
 
     def calculate_confidence(self, input_tensor, prediction, history_df):
         """
-        Calculate prediction confidence based on multiple factors:
-        1. Model uncertainty (using dropout during inference)
-        2. Data quality (recentness and consistency)
-        3. Forecast horizon (confidence decreases with time)
+        Calculate prediction confidence based on model uncertainty, data quality, and forecast horizon
         """
         try:
             confidence = 0.8  # Base confidence
             
-            # 1. Model uncertainty using dropout
+            # Model uncertainty using dropout
             self.model.train()  # Enable dropout for uncertainty estimation
             predictions = []
             for _ in range(10):  # Multiple forward passes with dropout
@@ -71,7 +68,7 @@ class ModelPredictor:
             pred_std = np.std(predictions)
             uncertainty_factor = max(0.1, min(1.0, 1.0 - pred_std / 5.0))  # Normalize to 0-1
             
-            # 2. Data quality assessment
+            # Data quality assessment
             if not history_df.empty:
                 # Check data recency
                 latest_time = history_df.index[-1]
@@ -89,9 +86,6 @@ class ModelPredictor:
             else:
                 recency_factor = 0.5
                 consistency_factor = 0.5
-            
-            # 3. Forecast horizon factor (confidence decreases with time)
-            # This will be passed as a parameter from the calling function
             
             # Combine factors
             confidence = (uncertainty_factor * 0.4 + 
@@ -175,17 +169,7 @@ class ModelPredictor:
     def prepare_training_data(self, df, fit_scaler=True, min_sequences=10):
         """Prepare training data for LSTM from dataframe.
         
-        This method transforms raw weather data into sequences suitable for LSTM training.
-        It performs the following steps:
-        1. Validates data sufficiency (requires at least sequence_length + 1 samples)
-        2. Validates required columns exist in the dataframe
-        3. Enhances data with time-based features (hour, month cyclical encodings)
-        4. Extracts available features (temperature, humidity, pressure, time features)
-        5. Handles missing values using forward fill then backward fill
-        6. Scales features using StandardScaler (fits only if fit_scaler=True)
-        7. Creates sliding window sequences of length sequence_length for input (X)
-        8. Creates corresponding target values (y) for temperature prediction
-        9. Validates final sequence count (requires at least min_sequences)
+        Transforms raw weather data into sequences suitable for LSTM training.
         
         Args:
             df: DataFrame containing weather data with columns like temperature, humidity, pressure
@@ -235,7 +219,7 @@ class ModelPredictor:
             X = df_enhanced[available_features].values
             y = df_enhanced['temperature'].values
             
-            # Handle missing values more intelligently
+            # Handle missing values
             if np.isnan(X).any():
                 logger.info("Handling missing values in features")
                 # Forward fill then backward fill for time series data
@@ -253,7 +237,7 @@ class ModelPredictor:
                 X_scaled = self.scaler.transform(X)
                 logger.info("Applied existing scaler to data")
             
-            # Create sequences more efficiently
+            # Create sequences
             n_samples = len(X_scaled) - self.sequence_length
             if n_samples <= 0:
                 logger.warning("No samples available after sequence creation")
@@ -368,13 +352,7 @@ class ModelPredictor:
     def prepare_input_tensor(self, df):
         """Prepare input tensor for LSTM from dataframe (last sequence_length rows).
         
-        This method prepares a single input sequence for prediction by:
-        1. Validating data sufficiency (requires at least sequence_length rows)
-        2. Adding time-based features (hour, month cyclical encodings)
-        3. Extracting available features in the same order as training
-        4. Handling missing values using forward fill then backward fill
-        5. Scaling features using the fitted scaler (if available)
-        6. Creating a single sequence tensor for prediction
+        Prepares a single input sequence for prediction.
         
         Args:
             df: DataFrame containing weather data with columns like temperature, humidity, pressure
@@ -418,7 +396,7 @@ class ModelPredictor:
             # Extract features
             X = df_enhanced[available_features].values
             
-            # Handle missing values more intelligently
+            # Handle missing values
             if np.isnan(X).any():
                 logger.info("Handling missing values in input tensor features")
                 # Forward fill then backward fill for time series data

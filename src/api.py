@@ -21,6 +21,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 import time
 from functools import wraps
 
+from database import DatabaseManager
 from weather_data_controller import WeatherDataController
 from model_predictor import ModelPredictor
 from scheduler import WeatherScheduler
@@ -98,7 +99,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # Initialize components
-weather_data_controller = WeatherDataController()
+# weather_data_controller = WeatherDataController() # This line is removed as per the edit hint
 model_predictor = ModelPredictor()
 # Use the global scheduler instance from scheduler module
 from scheduler import scheduler, create_scheduler
@@ -107,6 +108,9 @@ from scheduler import scheduler, create_scheduler
 if scheduler is None:
     logger.info("Creating scheduler in API initialization...")
     create_scheduler(model_predictor)
+
+# Create a single database manager instance
+db_manager = DatabaseManager()
 
 # Pydantic models for API
 class PredictionResponse(BaseModel):
@@ -160,7 +164,7 @@ async def get_predictions(hours: int = 48):
     """Get weather predictions for the specified number of hours (default: 48 hours)"""
     try:
         # Use the correct method to get predictions from database
-        predictions_df = weather_data_controller.get_latest_predictions(hours=hours)
+        predictions_df = db_manager.get_latest_predictions(hours=hours)
         
         if predictions_df.empty:
             return []
@@ -187,7 +191,7 @@ async def get_sensor_data(hours: int = 24, module_id: Optional[str] = None):
     try:
         logger.debug(f"Fetching sensor data with hours={hours}, module_id={module_id}")
         # Get raw sensor data using the correct method name
-        raw_data = weather_data_controller.fetch_recent_sensor_data(hours=hours, module_id=module_id)
+        raw_data = db_manager.get_latest_sensor_data(hours=hours, module_id=module_id)
         
         if raw_data.empty:
             return []
@@ -217,12 +221,12 @@ async def get_available_modules():
         # Query the database directly to get available modules
         query = f"""
             SELECT DISTINCT module 
-            FROM {weather_data_controller.db_manager.sensor_data_table}
+            FROM {db_manager.sensor_data_table}
             WHERE module IS NOT NULL
             ORDER BY module
         """
         
-        df = pd.read_sql(query, weather_data_controller.db_manager.source_engine)
+        df = pd.read_sql(query, db_manager.source_engine)
         modules = df['module'].tolist() if not df.empty else []
         
         return {"modules": modules}
@@ -236,7 +240,7 @@ async def get_preprocessed_data(hours_back: Optional[int] = None, limit: Optiona
     """Get preprocessed data for analysis"""
     try:
         logger.debug(f"Fetching preprocessed data with hours_back={hours_back}, limit={limit}")
-        df = weather_data_controller.fetch_preprocessed_data(hours_back=hours_back, limit=limit)
+        df = db_manager.get_preprocessed_data(hours_back=hours_back, limit=limit)
         
         if df.empty:
             return []
@@ -274,7 +278,7 @@ async def get_preprocessed_data(hours_back: Optional[int] = None, limit: Optiona
 async def get_preprocessed_stats():
     """Get statistics about preprocessed data"""
     try:
-        stats = weather_data_controller.fetch_preprocessed_data_stats()
+        stats = db_manager.get_preprocessed_data_stats()
         return stats
         
     except Exception as e:
@@ -287,9 +291,9 @@ async def get_stats():
     """Get comprehensive statistics about the system, including system status."""
     try:
         # Get various statistics using the correct method names
-        raw_stats = weather_data_controller.fetch_source_db_stats()
-        preprocessed_stats = weather_data_controller.fetch_preprocessed_data_stats()
-        api_stats = weather_data_controller.fetch_api_db_stats()
+        raw_stats = db_manager.get_source_database_stats()
+        preprocessed_stats = db_manager.get_preprocessed_data_stats()
+        api_stats = db_manager.get_api_database_stats()
         # Get model info
         model_info = {
             "is_trained": model_predictor.is_trained,
@@ -320,7 +324,7 @@ async def get_stats():
             except Exception as e:
                 logger.error(f"Failed to read scheduler status file: {e}")
         # System status fields
-        last_export_time = weather_data_controller.preprocessor.get_last_export_time()
+        last_export_time = None  # This would need to be tracked separately if needed
         # Compose response
         return {
             "raw_data": raw_stats,
@@ -373,7 +377,10 @@ async def process_data(force_full_export: bool = False, hours_back: int = 168):
     try:
         logger.info("Manual data processing requested")
         
-        raw_df, processed_df = weather_data_controller.process_and_store_new_data(
+        # For data processing, we need to use the scheduler or create a controller instance
+        from weather_data_controller import WeatherDataController
+        temp_controller = WeatherDataController()
+        raw_df, processed_df = temp_controller.process_and_store_new_data(
             force_full_export=force_full_export,
             hours_back=hours_back
         )

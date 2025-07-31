@@ -38,7 +38,7 @@ async def train_initial_model(model_predictor=None):
         
         # Get preprocessed data from database for training
         logger.info("Loading preprocessed data for model training...")
-        processed_df = data_processor.fetch_training_data(hours_back=8760)  # 1 year of data
+        processed_df = data_processor.get_training_data(hours_back=8760)  # 1 year of data
         
         if processed_df.empty:
             logger.warning("No preprocessed data available for training")

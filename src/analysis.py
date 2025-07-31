@@ -8,22 +8,28 @@ import pandas as pd
 import numpy as np
 import io
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from weather_data_controller import WeatherDataController
-from datetime import datetime
+import logging
+from datetime import datetime, timedelta
+from fastapi.responses import Response
+from database import DatabaseManager
 from scipy import stats
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Create a single database manager instance
+db_manager = DatabaseManager()
 
 class WeatherDataAnalyzer:
     def __init__(self):
-        self.controller = WeatherDataController()
+        self.controller = db_manager
         
     def load_data(self, hours_back=None, limit=None):
         """Load preprocessed data for analysis"""
         print("Loading preprocessed data...")
         print(f"Parameters: hours_back={hours_back}, limit={limit}")
         
-        df = self.controller.fetch_preprocessed_data(hours_back=hours_back, limit=limit)
+        df = self.controller.get_preprocessed_data(hours_back=hours_back, limit=limit)
         
         print(f"DataFrame returned: {df is not None}, empty: {df.empty if df is not None else 'N/A'}")
         if df is not None and not df.empty:
@@ -372,16 +378,16 @@ async def get_temperature_comparison_plot(
 ):
     """Generate temperature comparison plot (actual vs predicted, past & future)"""
     try:
-        weather_data_controller = WeatherDataController()
+        weather_data_controller = db_manager # Use db_manager directly
         if data_type == 'preprocessed':
-            actual_data = weather_data_controller.fetch_preprocessed_data(hours_back=hours)
+            actual_data = weather_data_controller.get_preprocessed_data(hours_back=hours)
             if actual_data is not None and not actual_data.empty:
                 actual_data = actual_data.reset_index()
                 actual_data = actual_data[['timestamp', 'temperature', 'humidity', 'pressure']]
                 if module_id and 'module' in actual_data.columns:
                     actual_data = actual_data[actual_data['module'] == module_id]
         else:
-            actual_data = weather_data_controller.fetch_recent_sensor_data(hours=hours, module_id=module_id)
+            actual_data = weather_data_controller.get_latest_sensor_data(hours=hours, module_id=module_id)
             if actual_data is not None and not actual_data.empty:
                 actual_data = actual_data[['timestamp', 'temperature', 'humidity', 'pressure']]
         if actual_data is not None and not actual_data.empty:
