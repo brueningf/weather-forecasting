@@ -118,11 +118,13 @@ app.router.lifespan_context = lifespan
 
 def run_api():
     """Run the FastAPI application"""
+    # When running the app object directly, we can't use reload
+    # So we disable it to avoid the warning
     uvicorn.run(
-        "main:app",
+        app,
         host=config.API_HOST,
         port=config.API_PORT,
-        reload=config.API_RELOAD,
+        reload=False,  # Disable reload when running app object directly
         log_level="info"
     )
 
