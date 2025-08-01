@@ -14,6 +14,7 @@ services:
       - LETSENCRYPT_HOST=weather.fredesk.com
       - VIRTUAL_PROTO=http
       - VIRTUAL_PORT=8000
+      - PYTHONPATH=/app
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000
 networks:
   default:
